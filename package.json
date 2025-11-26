@@ -1,0 +1,30 @@
+{
+    "name": "neurips-abstracts-webui-tests",
+    "version": "1.0.0",
+    "description": "Unit tests for NeurIPS Abstracts Web UI",
+    "scripts": {
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "test:coverage": "jest --coverage"
+    },
+    "jest": {
+        "testEnvironment": "jsdom",
+        "coverageDirectory": "./coverage",
+        "collectCoverageFrom": [
+            "webui/static/**/*.js",
+            "!webui/static/**/*.test.js"
+        ],
+        "setupFilesAfterEnv": [
+            "<rootDir>/webui/tests/setup.js"
+        ],
+        "testMatch": [
+            "**/webui/tests/**/*.test.js"
+        ]
+    },
+    "devDependencies": {
+        "@testing-library/dom": "^9.3.4",
+        "@testing-library/jest-dom": "^6.1.5",
+        "jest": "^29.7.0",
+        "jest-environment-jsdom": "^29.7.0"
+    }
+}

@@ -90,3 +90,7 @@ dmypy.json
 
 # CSV exports
 *.csv
+
+# Node
+node_modules/
+coverage/
