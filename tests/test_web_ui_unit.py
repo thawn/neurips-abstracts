@@ -258,10 +258,10 @@ class TestWebUIGetPaperDetails:
                 }
                 mock_db.query.return_value = [paper_row]
 
-                # Mock authors
+                # Mock authors - use 'fullname' field as per database schema
                 mock_db.get_paper_authors.return_value = [
-                    {"name": "Author 1"},
-                    {"name": "Author 2"},
+                    {"fullname": "Author 1"},
+                    {"fullname": "Author 2"},
                 ]
                 mock_get_db.return_value = mock_db
 
@@ -270,7 +270,7 @@ class TestWebUIGetPaperDetails:
                 assert response.status_code == 200
                 data = response.get_json()
 
-                # Verify authors are included as list of names (line 223)
+                # Verify authors are included as list of fullnames
                 assert "authors" in data
                 assert data["authors"] == ["Author 1", "Author 2"]
 

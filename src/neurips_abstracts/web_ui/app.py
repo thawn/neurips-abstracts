@@ -180,6 +180,19 @@ def search():
                         if "distances" in results and results["distances"][0]:
                             distance = results["distances"][0][i]
                             paper_dict["similarity"] = 1 - distance if distance <= 1 else 0
+
+                        # Ensure authors field is properly formatted as a list
+                        if "authors" in paper_dict:
+                            if isinstance(paper_dict["authors"], str):
+                                # Split comma-separated string into list
+                                paper_dict["authors"] = (
+                                    [a.strip() for a in paper_dict["authors"].split(",")]
+                                    if paper_dict["authors"]
+                                    else []
+                                )
+                            elif paper_dict["authors"] is None:
+                                paper_dict["authors"] = []
+
                         papers.append(paper_dict)
         else:
             # Keyword search in database
@@ -188,6 +201,17 @@ def search():
 
             # Convert to list of dicts for JSON serialization
             papers = [dict(p) for p in papers]
+
+            # Ensure authors field is properly formatted as a list
+            for paper in papers:
+                if "authors" in paper:
+                    if isinstance(paper["authors"], str):
+                        # Split comma-separated string into list
+                        paper["authors"] = (
+                            [a.strip() for a in paper["authors"].split(",")] if paper["authors"] else []
+                        )
+                    elif paper["authors"] is None:
+                        paper["authors"] = []
 
         return jsonify({"papers": papers, "count": len(papers), "query": query, "use_embeddings": use_embeddings})
     except Exception as e:
@@ -218,9 +242,9 @@ def get_paper(paper_id):
 
         paper = dict(papers[0])
 
-        # Get authors
+        # Get authors from authors table
         authors = database.get_paper_authors(paper_id)
-        paper["authors"] = [a["name"] for a in authors]
+        paper["authors"] = [a["fullname"] for a in authors]
 
         return jsonify(paper)
     except Exception as e:
