@@ -350,12 +350,13 @@ def mock_embeddings_manager():
     Notes
     -----
     Returns mock search results with 3 papers about transformers and language models.
+    Uses integer IDs as required by the database.
     """
     mock_em = Mock(spec=EmbeddingsManager)
 
-    # Mock successful search results
+    # Mock successful search results with INTEGER IDs
     mock_em.search_similar.return_value = {
-        "ids": [["paper1", "paper2", "paper3"]],
+        "ids": [[1, 2, 3]],  # Use integer IDs instead of strings
         "distances": [[0.1, 0.2, 0.3]],
         "metadatas": [
             [

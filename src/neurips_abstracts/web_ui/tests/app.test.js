@@ -82,6 +82,7 @@ describe('NeurIPS Abstracts Web UI', () => {
             <input id="chat-input" value="" />
             <select id="n-papers"><option value="3">3</option></select>
             <div id="chat-messages"></div>
+            <div id="chat-papers"></div>
         `;
 
         // Load app functions
@@ -285,6 +286,50 @@ describe('NeurIPS Abstracts Web UI', () => {
             expect(resultsDiv.innerHTML).toContain('Unknown');
         });
 
+        test('should display error for string authors', () => {
+            const data = {
+                papers: [
+                    {
+                        id: 1,
+                        name: 'Test Paper',
+                        authors: 'John Doe, Jane Smith', // String instead of array
+                        abstract: 'Test abstract'
+                    }
+                ],
+                count: 1,
+                use_embeddings: false
+            };
+
+            app.displaySearchResults(data);
+
+            const resultsDiv = document.getElementById('search-results');
+            expect(resultsDiv.innerHTML).toContain('Error');
+            expect(resultsDiv.innerHTML).toContain('Expected authors to be an array');
+            expect(console.error).toHaveBeenCalled();
+        });
+
+        test('should display error for non-array authors', () => {
+            const data = {
+                papers: [
+                    {
+                        id: 1,
+                        name: 'Test Paper',
+                        authors: { name: 'John Doe' }, // Object instead of array
+                        abstract: 'Test abstract'
+                    }
+                ],
+                count: 1,
+                use_embeddings: false
+            };
+
+            app.displaySearchResults(data);
+
+            const resultsDiv = document.getElementById('search-results');
+            expect(resultsDiv.innerHTML).toContain('Error');
+            expect(resultsDiv.innerHTML).toContain('Expected authors to be an array');
+            expect(console.error).toHaveBeenCalled();
+        });
+
         test('should use details element for long abstracts', () => {
             const longAbstract = 'A'.repeat(400);
             const data = {
@@ -351,7 +396,8 @@ describe('NeurIPS Abstracts Web UI', () => {
             app.displaySearchResults(data);
 
             const resultsDiv = document.getElementById('search-results');
-            expect(resultsDiv.innerHTML).toContain('Relevance:');
+            // The score is now displayed in a badge with fa-chart-line icon
+            expect(resultsDiv.innerHTML).toContain('fa-chart-line');
             expect(resultsDiv.innerHTML).toContain('0.750');
         });
 
@@ -737,6 +783,46 @@ describe('NeurIPS Abstracts Web UI', () => {
             expect(modal.innerHTML).toContain('&lt;script&gt;');
             expect(modal.innerHTML).toContain('&lt;b&gt;Author&lt;/b&gt;');
             expect(modal.innerHTML).toContain('&lt;img');
+        });
+
+        test('should handle string authors error in paper details', async () => {
+            const mockPaper = {
+                id: 1,
+                name: 'Test Paper',
+                authors: 'John Doe, Jane Smith', // String instead of array
+                abstract: 'Test abstract'
+            };
+
+            fetch.mockResolvedValueOnce({
+                json: async () => mockPaper
+            });
+
+            await app.showPaperDetails(1);
+
+            // Error should be displayed
+            const resultsDiv = document.getElementById('search-results');
+            expect(resultsDiv.innerHTML).toContain('Error');
+            expect(console.error).toHaveBeenCalled();
+        });
+
+        test('should handle non-array authors error in paper details', async () => {
+            const mockPaper = {
+                id: 1,
+                name: 'Test Paper',
+                authors: 123, // Number instead of array
+                abstract: 'Test abstract'
+            };
+
+            fetch.mockResolvedValueOnce({
+                json: async () => mockPaper
+            });
+
+            await app.showPaperDetails(1);
+
+            // Error should be displayed
+            const resultsDiv = document.getElementById('search-results');
+            expect(resultsDiv.innerHTML).toContain('Error');
+            expect(console.error).toHaveBeenCalled();
         });
     });
 });

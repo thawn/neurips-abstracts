@@ -14,6 +14,7 @@ from neurips_abstracts.database import DatabaseManager
 from neurips_abstracts.embeddings import EmbeddingsManager
 from neurips_abstracts.rag import RAGChat
 from neurips_abstracts.config import get_config
+from neurips_abstracts.paper_utils import get_paper_with_authors, format_search_results, PaperFormattingError
 
 # Get the directory where this file is located
 PACKAGE_DIR = Path(__file__).parent
@@ -81,17 +82,21 @@ def get_rag_chat():
         RAG chat instance
     """
     global rag_chat
+    database = get_database()  # Get database connection first (required)
+
     if rag_chat is None:
         config = get_config()  # Get config lazily
         em = get_embeddings_manager()
         rag_chat = RAGChat(
             embeddings_manager=em,
-            database=None,  # Will be set per-request
+            database=database,  # Database is now required
             lm_studio_url=config.llm_backend_url,
             model=config.chat_model,
         )
-    # Update database reference for this request
-    rag_chat.database = get_database()
+    else:
+        # Update database reference for this request
+        rag_chat.database = database
+
     return rag_chat
 
 
@@ -166,29 +171,15 @@ def search():
         if use_embeddings:
             # Semantic search using embeddings
             em = get_embeddings_manager()
+            database = get_database()
             results = em.search_similar(query, n_results=limit)
 
-            # Transform ChromaDB results to paper format
-            papers = []
-            if results.get("ids") and results["ids"][0]:
-                database = get_database()
-                for i in range(len(results["ids"][0])):
-                    paper_id = results["ids"][0][i]
-
-                    # Get full paper details from database
-                    paper_rows = database.query("SELECT * FROM papers WHERE id = ?", (paper_id,))
-                    if paper_rows:
-                        paper_dict = dict(paper_rows[0])
-                        # Add similarity score
-                        if "distances" in results and results["distances"][0]:
-                            distance = results["distances"][0][i]
-                            paper_dict["similarity"] = 1 - distance if distance <= 1 else 0
-
-                        # Get authors from authors table
-                        authors = database.get_paper_authors(paper_id)
-                        paper_dict["authors"] = [a["fullname"] for a in authors]
-
-                        papers.append(paper_dict)
+            # Transform ChromaDB results to paper format using shared utility
+            try:
+                papers = format_search_results(results, database, include_documents=False)
+            except PaperFormattingError as e:
+                # No valid papers found
+                return jsonify({"papers": [], "count": 0, "query": query, "use_embeddings": use_embeddings})
         else:
             # Keyword search in database
             database = get_database()
@@ -228,18 +219,10 @@ def get_paper(paper_id):
     """
     try:
         database = get_database()
-        papers = database.query("SELECT * FROM papers WHERE id = ?", (paper_id,))
-
-        if not papers:
-            return jsonify({"error": "Paper not found"}), 404
-
-        paper = dict(papers[0])
-
-        # Get authors from authors table
-        authors = database.get_paper_authors(paper_id)
-        paper["authors"] = [a["fullname"] for a in authors]
-
+        paper = get_paper_with_authors(database, paper_id)
         return jsonify(paper)
+    except PaperFormattingError as e:
+        return jsonify({"error": str(e)}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

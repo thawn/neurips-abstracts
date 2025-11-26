@@ -110,15 +110,15 @@ function formatPaperCard(paper, options = {}) {
     } = options;
 
     const title = paper.name || paper.title || 'Untitled';
-    // Handle authors as either array or string (for safety)
-    let authors = 'Unknown';
-    if (paper.authors) {
-        if (Array.isArray(paper.authors)) {
-            authors = paper.authors.join(', ');
-        } else if (typeof paper.authors === 'string') {
-            authors = paper.authors;
-        }
+
+    // Validate authors is an array (fail-early design)
+    if (paper.authors && !Array.isArray(paper.authors)) {
+        throw new TypeError(`Expected authors to be an array, got ${typeof paper.authors}`);
     }
+
+    const authors = (paper.authors && paper.authors.length > 0)
+        ? paper.authors.join(', ')
+        : 'Unknown';
 
     // Build abstract with collapsible details if needed
     let abstractHtml = '';
@@ -224,9 +224,15 @@ function displaySearchResults(data) {
     `;
 
     // Display papers using the shared formatting function
-    data.papers.forEach(paper => {
-        html += formatPaperCard(paper, { compact: false });
-    });
+    try {
+        data.papers.forEach(paper => {
+            html += formatPaperCard(paper, { compact: false });
+        });
+    } catch (error) {
+        console.error('Error formatting papers:', error);
+        showError(`Error displaying search results: ${error.message}`);
+        return;
+    }
 
     resultsDiv.innerHTML = html;
 }
@@ -249,7 +255,14 @@ async function showPaperDetails(paperId) {
             if (e.target === modal) modal.remove();
         };
 
-        const authors = paper.authors ? paper.authors.join(', ') : 'Unknown';
+        // Validate authors is an array (fail-early design)
+        if (paper.authors && !Array.isArray(paper.authors)) {
+            throw new TypeError(`Expected authors to be an array, got ${typeof paper.authors}`);
+        }
+
+        const authors = (paper.authors && paper.authors.length > 0)
+            ? paper.authors.join(', ')
+            : 'Unknown';
         const title = paper.name || paper.title || 'Untitled';
 
         modal.innerHTML = `

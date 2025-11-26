@@ -22,10 +22,10 @@ class TestWebUISemanticSearchDetails:
             # Mock the get_embeddings_manager and get_database functions
             with patch("neurips_abstracts.web_ui.app.get_embeddings_manager") as mock_get_em:
                 with patch("neurips_abstracts.web_ui.app.get_database") as mock_get_db:
-                    # Setup mock embeddings manager
+                    # Setup mock embeddings manager with INTEGER IDs
                     mock_em = Mock()
                     mock_em.search_similar.return_value = {
-                        "ids": [["paper1", "paper2"]],
+                        "ids": [[1, 2]],  # Use integer IDs
                         "distances": [[0.1, 0.2]],
                         "documents": [["doc1", "doc2"]],
                     }
@@ -34,12 +34,12 @@ class TestWebUISemanticSearchDetails:
                     # Setup mock database
                     mock_db = Mock()
                     mock_paper1 = {
-                        "id": "paper1",
+                        "id": 1,
                         "name": "Test Paper 1",
                         "abstract": "Abstract 1",
                     }
                     mock_paper2 = {
-                        "id": "paper2",
+                        "id": 2,
                         "name": "Test Paper 2",
                         "abstract": "Abstract 2",
                     }
@@ -47,9 +47,9 @@ class TestWebUISemanticSearchDetails:
                     # Mock query to return paper rows
                     def mock_query(sql, params):
                         paper_id = params[0]
-                        if paper_id == "paper1":
+                        if paper_id == 1:
                             return [mock_paper1]
-                        elif paper_id == "paper2":
+                        elif paper_id == 2:
                             return [mock_paper2]
                         return []
 
@@ -402,23 +402,47 @@ class TestWebUIChatExceptionLines:
 
 
 class TestWebUIGetPaperException:
-    """Test get_paper exception handling (lines 226-227)."""
+    """Test get_paper exception handling."""
 
-    def test_get_paper_exception_returns_500(self):
-        """Test that get_paper exceptions return 500."""
+    def test_get_paper_not_found_returns_404(self):
+        """Test that missing paper returns 404."""
         from neurips_abstracts.web_ui.app import app
 
         with app.test_client() as client:
             with patch("neurips_abstracts.web_ui.app.get_database") as mock_get_db:
                 mock_db = Mock()
-                mock_db.query.side_effect = Exception("Query failed")
+                mock_db.query.return_value = []  # No paper found
+                mock_get_db.return_value = mock_db
+
+                response = client.get("/api/paper/999")
+
+                assert response.status_code == 404
+                data = response.get_json()
+                assert "error" in data
+                assert "not found" in data["error"].lower()
+
+    def test_get_paper_database_error_returns_404(self):
+        """Test that database exceptions are wrapped as PaperFormattingError and return 404.
+
+        This is by design - our new API fails early and converts all database errors
+        to PaperFormattingError which returns 404 (not found).
+        """
+        from neurips_abstracts.web_ui.app import app
+
+        with app.test_client() as client:
+            with patch("neurips_abstracts.web_ui.app.get_database") as mock_get_db:
+                mock_db = Mock()
+                # Simulate a database exception - gets wrapped as PaperFormattingError
+                mock_db.query.side_effect = RuntimeError("Database connection lost")
                 mock_get_db.return_value = mock_db
 
                 response = client.get("/api/paper/1")
 
-                assert response.status_code == 500
+                # Database errors are wrapped as PaperFormattingError, which returns 404
+                assert response.status_code == 404
                 data = response.get_json()
                 assert "error" in data
+                assert "Failed to retrieve paper" in data["error"]
 
 
 class TestWebUIStatsExceptionHandling:

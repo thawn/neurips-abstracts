@@ -25,6 +25,56 @@ from tests.test_helpers import check_lm_studio_available, requires_lm_studio
 
 
 @pytest.fixture
+def mock_database():
+    """Create a mock database manager that returns papers for IDs 1, 2, 3."""
+    mock_db = Mock()
+
+    # Set up mock to return papers based on ID
+    def mock_query_side_effect(sql, params):
+        paper_id = params[0]
+        papers_map = {
+            1: {
+                "id": 1,
+                "name": "Attention Is All You Need",
+                "abstract": "We propose the Transformer...",
+                "topic": "Deep Learning",
+                "decision": "Accept (oral)",
+            },
+            2: {
+                "id": 2,
+                "name": "BERT: Pre-training of Deep Bidirectional Transformers",
+                "abstract": "We introduce BERT...",
+                "topic": "NLP",
+                "decision": "Accept (poster)",
+            },
+            3: {
+                "id": 3,
+                "name": "GPT-3: Language Models are Few-Shot Learners",
+                "abstract": "We train GPT-3...",
+                "topic": "Language Models",
+                "decision": "Accept (oral)",
+            },
+        }
+        paper = papers_map.get(paper_id)
+        return [paper] if paper else []
+
+    mock_db.query.side_effect = mock_query_side_effect
+
+    # Set up authors mock
+    def mock_authors_side_effect(paper_id):
+        authors_map = {
+            1: [{"fullname": "Vaswani et al."}],
+            2: [{"fullname": "Devlin et al."}],
+            3: [{"fullname": "Brown et al."}],
+        }
+        return authors_map.get(paper_id, [])
+
+    mock_db.get_paper_authors.side_effect = mock_authors_side_effect
+
+    return mock_db
+
+
+@pytest.fixture
 def mock_embeddings_manager_empty():
     """Create a mock embeddings manager that returns no results."""
     mock_em = Mock(spec=EmbeddingsManager)
@@ -60,11 +110,12 @@ def mock_lm_studio_response():
 class TestRAGChatInit:
     """Test RAGChat initialization."""
 
-    def test_init_with_defaults(self, mock_embeddings_manager):
+    def test_init_with_defaults(self, mock_embeddings_manager, mock_database):
         """Test initialization with default parameters."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         assert chat.embeddings_manager == mock_embeddings_manager
+        assert chat.database == mock_database
         assert "localhost" in chat.lm_studio_url or "127.0.0.1" in chat.lm_studio_url
         assert chat.model is not None
         assert chat.max_context_papers > 0
@@ -72,10 +123,11 @@ class TestRAGChatInit:
         assert isinstance(chat.conversation_history, list)
         assert len(chat.conversation_history) == 0
 
-    def test_init_with_custom_params(self, mock_embeddings_manager):
+    def test_init_with_custom_params(self, mock_embeddings_manager, mock_database):
         """Test initialization with custom parameters."""
         chat = RAGChat(
             mock_embeddings_manager,
+            mock_database,
             lm_studio_url="http://custom:8080",
             model="custom-model",
             max_context_papers=10,
@@ -87,22 +139,33 @@ class TestRAGChatInit:
         assert chat.max_context_papers == 10
         assert chat.temperature == 0.9
 
-    def test_init_url_trailing_slash(self, mock_embeddings_manager):
+    def test_init_url_trailing_slash(self, mock_embeddings_manager, mock_database):
         """Test that trailing slash is removed from URL."""
         chat = RAGChat(
             mock_embeddings_manager,
+            mock_database,
             lm_studio_url="http://localhost:1234/",
         )
 
         assert chat.lm_studio_url == "http://localhost:1234"
 
+    def test_init_without_embeddings_manager(self, mock_database):
+        """Test that missing embeddings manager raises error."""
+        with pytest.raises(RAGError, match="embeddings_manager is required"):
+            RAGChat(None, mock_database)
+
+    def test_init_without_database(self, mock_embeddings_manager):
+        """Test that missing database raises error."""
+        with pytest.raises(RAGError, match="database is required"):
+            RAGChat(mock_embeddings_manager, None)
+
 
 class TestRAGChatQuery:
     """Test RAGChat query method."""
 
-    def test_query_success(self, mock_embeddings_manager, mock_lm_studio_response):
+    def test_query_success(self, mock_embeddings_manager, mock_database, mock_lm_studio_response):
         """Test successful query with papers."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         result = chat.query("What is attention mechanism?")
 
@@ -122,9 +185,9 @@ class TestRAGChatQuery:
         assert chat.conversation_history[0]["role"] == "user"
         assert chat.conversation_history[1]["role"] == "assistant"
 
-    def test_query_with_n_results(self, mock_embeddings_manager, mock_lm_studio_response):
+    def test_query_with_n_results(self, mock_embeddings_manager, mock_database, mock_lm_studio_response):
         """Test query with custom n_results."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         result = chat.query("What is deep learning?", n_results=2)
 
@@ -132,9 +195,9 @@ class TestRAGChatQuery:
         call_args = mock_embeddings_manager.search_similar.call_args
         assert call_args[1]["n_results"] == 2
 
-    def test_query_with_metadata_filter(self, mock_embeddings_manager, mock_lm_studio_response):
+    def test_query_with_metadata_filter(self, mock_embeddings_manager, mock_database, mock_lm_studio_response):
         """Test query with metadata filter."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         metadata_filter = {"decision": "Accept (oral)"}
         result = chat.query("What are oral presentations?", metadata_filter=metadata_filter)
@@ -143,9 +206,9 @@ class TestRAGChatQuery:
         call_args = mock_embeddings_manager.search_similar.call_args
         assert call_args[1]["where"] == metadata_filter
 
-    def test_query_with_system_prompt(self, mock_embeddings_manager, mock_lm_studio_response):
+    def test_query_with_system_prompt(self, mock_embeddings_manager, mock_database, mock_lm_studio_response):
         """Test query with custom system prompt."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
         custom_prompt = "You are a helpful assistant specializing in machine learning."
 
         result = chat.query("Explain transformers", system_prompt=custom_prompt)
@@ -156,9 +219,9 @@ class TestRAGChatQuery:
         assert messages[0]["role"] == "system"
         assert messages[0]["content"] == custom_prompt
 
-    def test_query_no_results(self, mock_embeddings_manager_empty, mock_lm_studio_response):
+    def test_query_no_results(self, mock_embeddings_manager_empty, mock_database, mock_lm_studio_response):
         """Test query when no papers are found."""
-        chat = RAGChat(mock_embeddings_manager_empty)
+        chat = RAGChat(mock_embeddings_manager_empty, mock_database)
 
         result = chat.query("Unknown topic")
 
@@ -167,17 +230,17 @@ class TestRAGChatQuery:
         assert result["papers"] == []
         assert result["metadata"]["n_papers"] == 0
 
-    def test_query_api_timeout(self, mock_embeddings_manager):
+    def test_query_api_timeout(self, mock_embeddings_manager, mock_database):
         """Test query with API timeout."""
         with patch("neurips_abstracts.rag.requests.post") as mock_post:
             mock_post.side_effect = requests.exceptions.Timeout("Timeout")
 
-            chat = RAGChat(mock_embeddings_manager)
+            chat = RAGChat(mock_embeddings_manager, mock_database)
 
             with pytest.raises(RAGError, match="Request to LM Studio timed out"):
                 chat.query("What is machine learning?")
 
-    def test_query_api_http_error(self, mock_embeddings_manager):
+    def test_query_api_http_error(self, mock_embeddings_manager, mock_database):
         """Test query with HTTP error."""
         with patch("neurips_abstracts.rag.requests.post") as mock_post:
             mock_response = Mock()
@@ -185,12 +248,12 @@ class TestRAGChatQuery:
             mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(response=mock_response)
             mock_post.return_value = mock_response
 
-            chat = RAGChat(mock_embeddings_manager)
+            chat = RAGChat(mock_embeddings_manager, mock_database)
 
             with pytest.raises(RAGError, match="LM Studio API error"):
                 chat.query("What is deep learning?")
 
-    def test_query_invalid_response(self, mock_embeddings_manager):
+    def test_query_invalid_response(self, mock_embeddings_manager, mock_database):
         """Test query with invalid API response format."""
         with patch("neurips_abstracts.rag.requests.post") as mock_post:
             mock_response = Mock()
@@ -199,16 +262,16 @@ class TestRAGChatQuery:
             mock_response.raise_for_status = Mock()
             mock_post.return_value = mock_response
 
-            chat = RAGChat(mock_embeddings_manager)
+            chat = RAGChat(mock_embeddings_manager, mock_database)
 
             with pytest.raises(RAGError, match="Invalid response from LM Studio API"):
                 chat.query("What is AI?")
 
-    def test_query_general_exception(self, mock_embeddings_manager):
+    def test_query_general_exception(self, mock_embeddings_manager, mock_database):
         """Test query with general exception."""
         mock_embeddings_manager.search_similar.side_effect = Exception("Unexpected error")
 
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         with pytest.raises(RAGError, match="Query failed"):
             chat.query("What is NLP?")
@@ -217,9 +280,9 @@ class TestRAGChatQuery:
 class TestRAGChatChat:
     """Test RAGChat chat method."""
 
-    def test_chat_with_context(self, mock_embeddings_manager, mock_lm_studio_response):
+    def test_chat_with_context(self, mock_embeddings_manager, mock_database, mock_lm_studio_response):
         """Test chat with context retrieval."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         result = chat.chat("Tell me about transformers")
 
@@ -227,9 +290,9 @@ class TestRAGChatChat:
         assert len(result["papers"]) > 0
         mock_embeddings_manager.search_similar.assert_called_once()
 
-    def test_chat_without_context(self, mock_embeddings_manager, mock_lm_studio_response):
+    def test_chat_without_context(self, mock_embeddings_manager, mock_database, mock_lm_studio_response):
         """Test chat without context retrieval."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         result = chat.chat("Hello, how are you?", use_context=False)
 
@@ -239,9 +302,9 @@ class TestRAGChatChat:
         # Search should not be called when use_context=False
         mock_embeddings_manager.search_similar.assert_not_called()
 
-    def test_chat_custom_n_results(self, mock_embeddings_manager, mock_lm_studio_response):
+    def test_chat_custom_n_results(self, mock_embeddings_manager, mock_database, mock_lm_studio_response):
         """Test chat with custom n_results."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         result = chat.chat("What is AI?", n_results=7)
 
@@ -252,9 +315,9 @@ class TestRAGChatChat:
 class TestRAGChatConversation:
     """Test conversation history management."""
 
-    def test_reset_conversation(self, mock_embeddings_manager, mock_lm_studio_response):
+    def test_reset_conversation(self, mock_embeddings_manager, mock_database, mock_lm_studio_response):
         """Test resetting conversation history."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         # Have some conversation
         chat.query("First question")
@@ -267,9 +330,9 @@ class TestRAGChatConversation:
 
         assert len(chat.conversation_history) == 0
 
-    def test_conversation_history_accumulates(self, mock_embeddings_manager, mock_lm_studio_response):
+    def test_conversation_history_accumulates(self, mock_embeddings_manager, mock_database, mock_lm_studio_response):
         """Test that conversation history accumulates."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         chat.query("First question")
         assert len(chat.conversation_history) == 2
@@ -280,9 +343,9 @@ class TestRAGChatConversation:
         chat.chat("Third message", use_context=False)
         assert len(chat.conversation_history) == 6
 
-    def test_conversation_history_in_api_call(self, mock_embeddings_manager, mock_lm_studio_response):
+    def test_conversation_history_in_api_call(self, mock_embeddings_manager, mock_database, mock_lm_studio_response):
         """Test that conversation history is included in API calls."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         # First query
         chat.query("What is attention?")
@@ -299,124 +362,17 @@ class TestRAGChatConversation:
         assert messages[0]["role"] == "system"
 
 
-class TestRAGChatFormatting:
-    """Test internal formatting methods."""
-
-    def test_format_papers(self, mock_embeddings_manager):
-        """Test paper formatting from search results."""
-        chat = RAGChat(mock_embeddings_manager)
-
-        search_results = {
-            "ids": [["paper1", "paper2"]],
-            "distances": [[0.1, 0.3]],
-            "metadatas": [
-                [
-                    {
-                        "title": "Test Paper 1",
-                        "authors": "Author A",
-                        "topic": "Topic A",
-                        "decision": "Accept",
-                    },
-                    {
-                        "title": "Test Paper 2",
-                        "authors": "Author B",
-                        "topic": "Topic B",
-                        "decision": "Reject",
-                    },
-                ]
-            ],
-            "documents": [["Abstract 1", "Abstract 2"]],
-        }
-
-        papers = chat._format_papers(search_results)
-
-        assert len(papers) == 2
-        assert papers[0]["id"] == "paper1"
-        assert papers[0]["title"] == "Test Paper 1"
-        assert papers[0]["authors"] == "Author A"
-        assert papers[0]["abstract"] == "Abstract 1"
-        assert papers[0]["similarity"] == pytest.approx(0.9, abs=0.01)
-
-        assert papers[1]["id"] == "paper2"
-        assert papers[1]["similarity"] == pytest.approx(0.7, abs=0.01)
-
-    def test_format_papers_missing_metadata(self, mock_embeddings_manager):
-        """Test paper formatting with missing metadata fields."""
-        chat = RAGChat(mock_embeddings_manager)
-
-        search_results = {
-            "ids": [["paper1"]],
-            "distances": [[0.2]],
-            "metadatas": [[{}]],  # Empty metadata
-            "documents": [["Abstract text"]],
-        }
-
-        papers = chat._format_papers(search_results)
-
-        assert len(papers) == 1
-        assert papers[0]["title"] == "N/A"
-        assert papers[0]["authors"] == "N/A"
-        assert papers[0]["decision"] == "N/A"
-        assert papers[0]["topic"] == "N/A"
-
-    def test_build_context(self, mock_embeddings_manager):
-        """Test context building from papers."""
-        chat = RAGChat(mock_embeddings_manager)
-
-        papers = [
-            {
-                "title": "Test Paper",
-                "authors": "Author A, Author B",
-                "topic": "Machine Learning",
-                "decision": "Accept",
-                "abstract": "This is a test abstract.",
-            }
-        ]
-
-        context = chat._build_context(papers)
-
-        assert "Paper 1:" in context
-        assert "Test Paper" in context
-        assert "Author A, Author B" in context
-        assert "Machine Learning" in context
-        assert "Accept" in context
-        assert "This is a test abstract." in context
-
-    def test_build_context_multiple_papers(self, mock_embeddings_manager):
-        """Test context building with multiple papers."""
-        chat = RAGChat(mock_embeddings_manager)
-
-        papers = [
-            {
-                "title": "Paper 1",
-                "authors": "Author 1",
-                "topic": "Topic 1",
-                "decision": "Accept",
-                "abstract": "Abstract 1",
-            },
-            {
-                "title": "Paper 2",
-                "authors": "Author 2",
-                "topic": "Topic 2",
-                "decision": "Reject",
-                "abstract": "Abstract 2",
-            },
-        ]
-
-        context = chat._build_context(papers)
-
-        assert "Paper 1:" in context
-        assert "Paper 2:" in context
-        assert "Paper 1" in context
-        assert "Paper 2" in context
+# NOTE: Paper formatting tests have been moved to test_paper_utils.py
+# The _format_papers and _build_context methods are now shared utilities
+# in the paper_utils module and are tested there.
 
 
 class TestRAGChatExport:
     """Test conversation export functionality."""
 
-    def test_export_conversation(self, mock_embeddings_manager, mock_lm_studio_response, tmp_path):
+    def test_export_conversation(self, mock_embeddings_manager, mock_database, mock_lm_studio_response, tmp_path):
         """Test exporting conversation to JSON."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         # Have some conversation
         chat.query("First question")
@@ -439,7 +395,7 @@ class TestRAGChatExport:
 
     def test_export_empty_conversation(self, mock_embeddings_manager, tmp_path):
         """Test exporting empty conversation."""
-        chat = RAGChat(mock_embeddings_manager)
+        chat = RAGChat(mock_embeddings_manager, mock_database)
 
         output_path = tmp_path / "empty_conversation.json"
         chat.export_conversation(output_path)

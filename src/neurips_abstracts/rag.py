@@ -13,6 +13,7 @@ from typing import List, Dict, Optional, Any
 import requests
 
 from .config import get_config
+from .paper_utils import format_search_results, build_context_from_papers, PaperFormattingError
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ class RAGChat:
     def __init__(
         self,
         embeddings_manager,
-        database=None,
+        database,
         lm_studio_url: Optional[str] = None,
         model: Optional[str] = None,
         max_context_papers: Optional[int] = None,
@@ -70,8 +71,8 @@ class RAGChat:
         ----------
         embeddings_manager : EmbeddingsManager
             Manager for embeddings and vector search.
-        database : NeurIPSDatabase, optional
-            Database instance for querying paper details.
+        database : DatabaseManager
+            Database instance for querying paper details. REQUIRED - no fallback allowed.
         lm_studio_url : str, optional
             URL for LM Studio API. If None, uses config value.
         model : str, optional
@@ -80,7 +81,17 @@ class RAGChat:
             Maximum number of papers to include in context. If None, uses config value.
         temperature : float, optional
             Sampling temperature for generation. If None, uses config value.
+
+        Raises
+        ------
+        RAGError
+            If required parameters are missing or invalid.
         """
+        if embeddings_manager is None:
+            raise RAGError("embeddings_manager is required.")
+        if database is None:
+            raise RAGError("database is required. RAGChat cannot operate without database access.")
+
         config = get_config()
         self.embeddings_manager = embeddings_manager
         self.database = database
@@ -148,9 +159,9 @@ class RAGChat:
                     "metadata": {"n_papers": 0},
                 }
 
-            # Format context from papers
-            papers = self._format_papers(search_results)
-            context = self._build_context(papers)
+            # Format context from papers using shared utility
+            papers = format_search_results(search_results, self.database, include_documents=True)
+            context = build_context_from_papers(papers)
 
             # Generate response using LM Studio
             logger.info(f"Generating response using {len(papers)} papers as context")
@@ -166,6 +177,8 @@ class RAGChat:
                 "metadata": {"n_papers": len(papers), "model": self.model},
             }
 
+        except PaperFormattingError as e:
+            raise RAGError(f"Failed to format papers: {str(e)}") from e
         except requests.exceptions.RequestException as e:
             raise RAGError(f"API request failed: {str(e)}") from e
         except Exception as e:
@@ -222,120 +235,6 @@ class RAGChat:
         """
         self.conversation_history = []
         logger.info("Conversation history reset")
-
-    def _format_papers(self, search_results: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """
-        Format search results into structured paper data.
-
-        Parameters
-        ----------
-        search_results : dict
-            Results from embeddings search.
-
-        Returns
-        -------
-        list
-            List of formatted paper dictionaries.
-        """
-        papers = []
-        for i in range(len(search_results["ids"][0])):
-            paper_id = search_results["ids"][0][i]
-            metadata = search_results["metadatas"][0][i]
-
-            # Get full paper details from database if available
-            if self.database is not None:
-                try:
-                    # Get full paper record from database (includes session, poster_position, etc.)
-                    paper_rows = self.database.query("SELECT * FROM papers WHERE id = ?", (paper_id,))
-                    if paper_rows:
-                        paper = dict(paper_rows[0])
-
-                        # Get authors from authors table
-                        authors_rows = self.database.get_paper_authors(paper_id)
-                        paper["authors"] = [a["fullname"] for a in authors_rows]
-
-                        # Add distance/similarity scores
-                        if "distances" in search_results and search_results["distances"][0]:
-                            distance = search_results["distances"][0][i]
-                            paper["distance"] = distance
-                            paper["similarity"] = 1 - distance if distance <= 1 else 0
-
-                        # Add aliases for consistency (database uses 'name', web UI expects 'title' too)
-                        if "name" in paper:
-                            paper["title"] = paper["name"]
-
-                        # Add abstract from search results if not in database
-                        if not paper.get("abstract") and "documents" in search_results:
-                            paper["abstract"] = search_results["documents"][0][i]
-
-                        papers.append(paper)
-                        continue
-                except Exception as e:
-                    logger.debug(f"Failed to get full paper details for {paper_id}: {e}")
-                    # Fall through to metadata-based approach
-
-            # Fallback: use metadata from ChromaDB (less complete)
-            authors_str = metadata.get("authors", "N/A")
-            authors = [authors_str] if isinstance(authors_str, str) else []
-
-            paper = {
-                "id": paper_id,
-                "title": metadata.get("title", "N/A"),
-                "name": metadata.get("title", "N/A"),
-                "authors": authors,
-                "abstract": search_results["documents"][0][i] if "documents" in search_results else "",
-                "decision": metadata.get("decision", "N/A"),
-                "topic": metadata.get("topic", "N/A"),
-                "session": metadata.get("session", None),
-                "poster_position": metadata.get("poster_position", None),
-                "paper_url": metadata.get("paper_url", None),
-                "distance": search_results["distances"][0][i] if "distances" in search_results else None,
-                "similarity": 1 - search_results["distances"][0][i] if search_results["distances"][0][i] <= 1 else 0,
-            }
-            papers.append(paper)
-        return papers
-
-    def _build_context(self, papers: List[Dict[str, Any]]) -> str:
-        """
-        Build context string from papers.
-
-        Parameters
-        ----------
-        papers : list
-            List of paper dictionaries.
-
-        Returns
-        -------
-        str
-            Formatted context string.
-        """
-        context_parts = []
-        for i, paper in enumerate(papers, 1):
-            context_parts.append(f"Paper {i}:")
-
-            # Handle title (could be 'title' or 'name')
-            title = paper.get("title") or paper.get("name", "N/A")
-            context_parts.append(f"Title: {title}")
-
-            # Handle authors (could be list or string)
-            authors = paper.get("authors", "N/A")
-            if isinstance(authors, list):
-                authors = ", ".join(authors) if authors else "N/A"
-            context_parts.append(f"Authors: {authors}")
-
-            # Handle optional fields
-            topic = paper.get("topic", "N/A")
-            context_parts.append(f"Topic: {topic}")
-
-            decision = paper.get("decision", "N/A")
-            context_parts.append(f"Decision: {decision}")
-
-            abstract = paper.get("abstract", "N/A")
-            context_parts.append(f"Abstract: {abstract}")
-
-            context_parts.append("")  # Empty line between papers
-
-        return "\n".join(context_parts)
 
     def _generate_response(self, question: str, context: str, system_prompt: Optional[str] = None) -> str:
         """
