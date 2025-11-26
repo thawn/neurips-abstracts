@@ -189,16 +189,17 @@ describe('NeurIPS Abstracts Web UI', () => {
                 papers: [
                     {
                         id: 1,
-                        title: 'Test Paper 1',
+                        name: 'Test Paper 1',
                         authors: ['Author A', 'Author B'],
-                        year: 2025,
-                        abstract: 'This is a test abstract.'
+                        abstract: 'This is a test abstract.',
+                        session: 'Session 1A',
+                        poster_position: '42',
+                        paper_url: 'https://example.com/paper1'
                     },
                     {
                         id: 2,
-                        title: 'Test Paper 2',
+                        name: 'Test Paper 2',
                         authors: ['Author C'],
-                        year: 2024,
                         abstract: 'Another test abstract.'
                     }
                 ],
@@ -214,11 +215,14 @@ describe('NeurIPS Abstracts Web UI', () => {
             expect(resultsDiv.innerHTML).toContain('Test Paper 2');
             expect(resultsDiv.innerHTML).toContain('Author A, Author B');
             expect(resultsDiv.innerHTML).toContain('Author C');
+            expect(resultsDiv.innerHTML).toContain('Session 1A');
+            expect(resultsDiv.innerHTML).toContain('Poster 42');
+            expect(resultsDiv.innerHTML).toContain('View Paper Details');
         });
 
         test('should show AI-Powered badge for embedding search', () => {
             const data = {
-                papers: [{ id: 1, title: 'Test', authors: [], abstract: 'Test' }],
+                papers: [{ id: 1, name: 'Test', authors: [], abstract: 'Test' }],
                 count: 1,
                 use_embeddings: true
             };
@@ -234,7 +238,7 @@ describe('NeurIPS Abstracts Web UI', () => {
                 papers: [
                     {
                         id: 1,
-                        title: 'Test Paper',
+                        name: 'Test Paper',
                         authors: null,
                         abstract: 'Test abstract'
                     }
@@ -249,13 +253,13 @@ describe('NeurIPS Abstracts Web UI', () => {
             expect(resultsDiv.innerHTML).toContain('Unknown');
         });
 
-        test('should truncate long abstracts', () => {
+        test('should use details element for long abstracts', () => {
             const longAbstract = 'A'.repeat(400);
             const data = {
                 papers: [
                     {
                         id: 1,
-                        title: 'Test Paper',
+                        name: 'Test Paper',
                         authors: ['Author'],
                         abstract: longAbstract
                     }
@@ -267,8 +271,34 @@ describe('NeurIPS Abstracts Web UI', () => {
             app.displaySearchResults(data);
 
             const resultsDiv = document.getElementById('search-results');
+            expect(resultsDiv.innerHTML).toContain('<details');
+            expect(resultsDiv.innerHTML).toContain('Show more');
             expect(resultsDiv.innerHTML).toContain('...');
-            expect(resultsDiv.innerHTML).not.toContain('A'.repeat(400));
+            // Full abstract should be in the details content
+            expect(resultsDiv.innerHTML).toContain('A'.repeat(400));
+        });
+
+        test('should not use details element for short abstracts', () => {
+            const shortAbstract = 'This is a short abstract.';
+            const data = {
+                papers: [
+                    {
+                        id: 1,
+                        name: 'Test Paper',
+                        authors: ['Author'],
+                        abstract: shortAbstract
+                    }
+                ],
+                count: 1,
+                use_embeddings: false
+            };
+
+            app.displaySearchResults(data);
+
+            const resultsDiv = document.getElementById('search-results');
+            expect(resultsDiv.innerHTML).not.toContain('<details');
+            expect(resultsDiv.innerHTML).not.toContain('Show more');
+            expect(resultsDiv.innerHTML).toContain(shortAbstract);
         });
 
         test('should display relevance score for embeddings', () => {
@@ -276,7 +306,7 @@ describe('NeurIPS Abstracts Web UI', () => {
                 papers: [
                     {
                         id: 1,
-                        title: 'Test Paper',
+                        name: 'Test Paper',
                         authors: ['Author'],
                         abstract: 'Test',
                         distance: 0.25
@@ -298,7 +328,7 @@ describe('NeurIPS Abstracts Web UI', () => {
                 papers: [
                     {
                         id: 1,
-                        title: '<script>alert("xss")</script>',
+                        name: '<script>alert("xss")</script>',
                         authors: ['<b>Author</b>'],
                         abstract: '<img src=x onerror=alert(1)>'
                     }
@@ -536,11 +566,14 @@ describe('NeurIPS Abstracts Web UI', () => {
         test('should fetch and display paper details', async () => {
             const mockPaper = {
                 id: 1,
-                title: 'Test Paper',
+                name: 'Test Paper',
                 authors: ['Author A', 'Author B'],
-                year: 2025,
                 abstract: 'This is a test abstract',
-                pdf_url: 'https://example.com/paper.pdf'
+                session: 'Session 2B',
+                poster_position: '101',
+                url: 'https://example.com/paper',
+                pdf_url: 'https://example.com/paper.pdf',
+                paper_url: 'https://example.com/paper_link'
             };
 
             fetch.mockResolvedValueOnce({
@@ -557,13 +590,17 @@ describe('NeurIPS Abstracts Web UI', () => {
             expect(modal.innerHTML).toContain('Test Paper');
             expect(modal.innerHTML).toContain('Author A, Author B');
             expect(modal.innerHTML).toContain('This is a test abstract');
+            expect(modal.innerHTML).toContain('Session 2B');
+            expect(modal.innerHTML).toContain('Poster 101');
+            expect(modal.innerHTML).toContain('View Paper Details');
             expect(modal.innerHTML).toContain('View PDF');
+            expect(modal.innerHTML).toContain('Paper Link');
         });
 
         test('should handle missing PDF URL', async () => {
             const mockPaper = {
                 id: 1,
-                title: 'Test Paper',
+                name: 'Test Paper',
                 authors: [],
                 abstract: 'Test'
             };
@@ -592,7 +629,7 @@ describe('NeurIPS Abstracts Web UI', () => {
         test('should escape HTML in paper details', async () => {
             const mockPaper = {
                 id: 1,
-                title: '<script>alert("xss")</script>',
+                name: '<script>alert("xss")</script>',
                 authors: ['<b>Author</b>'],
                 abstract: '<img src=x onerror=alert(1)>'
             };

@@ -11,14 +11,14 @@
         "testEnvironment": "jsdom",
         "coverageDirectory": "./coverage",
         "collectCoverageFrom": [
-            "webui/static/**/*.js",
-            "!webui/static/**/*.test.js"
+            "src/neurips_abstracts/web_ui/static/**/*.js",
+            "!src/neurips_abstracts/web_ui/static/**/*.test.js"
         ],
         "setupFilesAfterEnv": [
-            "<rootDir>/webui/tests/setup.js"
+            "<rootDir>/src/neurips_abstracts/web_ui/tests/setup.js"
         ],
         "testMatch": [
-            "**/webui/tests/**/*.test.js"
+            "**/src/neurips_abstracts/web_ui/tests/**/*.test.js"
         ]
     },
     "devDependencies": {

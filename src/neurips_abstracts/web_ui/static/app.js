@@ -129,22 +129,55 @@ function displaySearchResults(data) {
 
     // Display papers
     data.papers.forEach(paper => {
+        const title = paper.name || paper.title || 'Untitled';
         const authors = paper.authors ? paper.authors.join(', ') : 'Unknown';
-        const year = paper.year || 'N/A';
-        const abstract = paper.abstract ?
-            (paper.abstract.length > 300 ? paper.abstract.substring(0, 300) + '...' : paper.abstract)
-            : 'No abstract available';
+
+        // Build abstract with collapsible details if needed
+        let abstractHtml = '';
+        if (paper.abstract) {
+            if (paper.abstract.length > 300) {
+                const preview = paper.abstract.substring(0, 300);
+                abstractHtml = `
+                    <details class="text-gray-700 text-sm leading-relaxed" onclick="event.stopPropagation()">
+                        <summary class="cursor-pointer hover:text-purple-600">
+                            ${escapeHtml(preview)}... <span class="text-purple-600 font-medium">Show more</span>
+                        </summary>
+                        <p class="mt-2">${escapeHtml(paper.abstract)}</p>
+                    </details>
+                `;
+            } else {
+                abstractHtml = `<p class="text-gray-700 text-sm leading-relaxed">${escapeHtml(paper.abstract)}</p>`;
+            }
+        } else {
+            abstractHtml = `<p class="text-gray-700 text-sm leading-relaxed">No abstract available</p>`;
+        }
+
+        // Build metadata badges
+        let metadata = '';
+        if (paper.session) {
+            metadata += `<span class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded-full mr-2"><i class="fas fa-calendar-alt mr-1"></i>${escapeHtml(paper.session)}</span>`;
+        }
+        if (paper.poster_position) {
+            metadata += `<span class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full mr-2"><i class="fas fa-map-pin mr-1"></i>Poster ${escapeHtml(paper.poster_position)}</span>`;
+        }
 
         html += `
             <div class="paper-card bg-white rounded-lg shadow-md p-6 hover:shadow-lg cursor-pointer" onclick="showPaperDetails(${paper.id})">
                 <div class="flex items-start justify-between mb-2">
-                    <h3 class="text-lg font-semibold text-gray-800 flex-1">${escapeHtml(paper.title)}</h3>
-                    <span class="ml-4 px-3 py-1 bg-blue-100 text-blue-700 text-sm rounded-full flex-shrink-0">${year}</span>
+                    <h3 class="text-lg font-semibold text-gray-800 flex-1">${escapeHtml(title)}</h3>
                 </div>
                 <p class="text-sm text-gray-600 mb-3">
                     <i class="fas fa-users mr-1"></i>${escapeHtml(authors)}
                 </p>
-                <p class="text-gray-700 text-sm leading-relaxed">${escapeHtml(abstract)}</p>
+                ${metadata ? `<div class="mb-3">${metadata}</div>` : ''}
+                ${abstractHtml}
+                ${paper.paper_url ? `
+                    <div class="mt-3">
+                        <a href="${escapeHtml(paper.paper_url)}" target="_blank" class="text-purple-600 hover:text-purple-800 text-sm" onclick="event.stopPropagation()">
+                            <i class="fas fa-external-link-alt mr-1"></i>View Paper Details
+                        </a>
+                    </div>
+                ` : ''}
                 ${paper.distance !== undefined ? `
                     <div class="mt-3 pt-3 border-t">
                         <span class="text-xs text-gray-500">
@@ -179,20 +212,28 @@ async function showPaperDetails(paperId) {
         };
 
         const authors = paper.authors ? paper.authors.join(', ') : 'Unknown';
+        const title = paper.name || paper.title || 'Untitled';
 
         modal.innerHTML = `
             <div class="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-y-auto p-8">
                 <div class="flex items-start justify-between mb-4">
-                    <h2 class="text-2xl font-bold text-gray-800 flex-1">${escapeHtml(paper.title)}</h2>
+                    <h2 class="text-2xl font-bold text-gray-800 flex-1">${escapeHtml(title)}</h2>
                     <button onclick="this.closest('.fixed').remove()" class="ml-4 text-gray-500 hover:text-gray-700">
                         <i class="fas fa-times text-xl"></i>
                     </button>
                 </div>
                 
                 <div class="mb-4 flex flex-wrap gap-2">
-                    <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
-                        <i class="fas fa-calendar mr-1"></i>${paper.year}
-                    </span>
+                    ${paper.session ? `
+                        <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
+                            <i class="fas fa-calendar-alt mr-1"></i>${escapeHtml(paper.session)}
+                        </span>
+                    ` : ''}
+                    ${paper.poster_position ? `
+                        <span class="px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-sm">
+                            <i class="fas fa-map-pin mr-1"></i>Poster ${escapeHtml(paper.poster_position)}
+                        </span>
+                    ` : ''}
                     <span class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
                         <i class="fas fa-fingerprint mr-1"></i>ID: ${paper.id}
                     </span>
@@ -212,13 +253,23 @@ async function showPaperDetails(paperId) {
                     <p class="text-gray-700 leading-relaxed">${escapeHtml(paper.abstract || 'No abstract available')}</p>
                 </div>
                 
-                ${paper.pdf_url ? `
-                    <div>
-                        <a href="${paper.pdf_url}" target="_blank" class="inline-block px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                <div class="flex gap-3">
+                    ${paper.url ? `
+                        <a href="${escapeHtml(paper.url)}" target="_blank" class="inline-block px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                            <i class="fas fa-external-link-alt mr-2"></i>View Paper Details
+                        </a>
+                    ` : ''}
+                    ${paper.pdf_url ? `
+                        <a href="${escapeHtml(paper.pdf_url)}" target="_blank" class="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                             <i class="fas fa-file-pdf mr-2"></i>View PDF
                         </a>
-                    </div>
-                ` : ''}
+                    ` : ''}
+                    ${paper.paper_url ? `
+                        <a href="${escapeHtml(paper.paper_url)}" target="_blank" class="inline-block px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                            <i class="fas fa-link mr-2"></i>Paper Link
+                        </a>
+                    ` : ''}
+                </div>
             </div>
         `;
 

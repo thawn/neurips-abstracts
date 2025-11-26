@@ -53,7 +53,12 @@ class TestWebUISemanticSearchDetails:
                             return [mock_paper2]
                         return []
 
+                    # Mock get_paper_authors to return author names
+                    def mock_get_authors(paper_id):
+                        return [{"fullname": "Author A"}, {"fullname": "Author B"}]
+
                     mock_db.query.side_effect = mock_query
+                    mock_db.get_paper_authors.side_effect = mock_get_authors
                     mock_get_db.return_value = mock_db
 
                     # Make request
@@ -308,6 +313,7 @@ class TestWebUISearchExceptionHandling:
             with patch("neurips_abstracts.web_ui.app.get_database") as mock_get_db:
                 mock_db = Mock()
                 mock_db.search_papers.side_effect = Exception("Database connection failed")
+                mock_db.get_paper_authors.return_value = []
                 mock_get_db.return_value = mock_db
 
                 response = client.post(
