@@ -363,10 +363,10 @@ class RAGChat:
         # Default system prompt
         if system_prompt is None:
             system_prompt = (
-                "You are an AI assistant helping researchers understand NeurIPS papers. "
+                "You are an AI assistant helping researchers find relevant NeurIPS abstracts. "
                 "Use the provided paper abstracts to answer questions accurately and concisely. "
-                "If the papers don't contain enough information to answer the question, say so. "
-                "Always cite which papers you're referencing (e.g., 'Paper 1', 'Paper 2')."
+                "If the papers don't contain enough information to answer the question, suggest a query that might return more relevant results. "
+                "Always cite which papers you're referencing (e.g., 'Paper 1', 'Paper 2'), using local links: #paper-1, #paper-2 etc."
             )
 
         # Build messages
