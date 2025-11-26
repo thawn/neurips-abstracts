@@ -114,3 +114,47 @@ class TestDatabaseManager:
     def test_get_paper_count_empty(self, connected_db):
         """Test getting paper count on empty database."""
         assert connected_db.get_paper_count() == 0
+
+    def test_get_filter_options_empty(self, connected_db):
+        """Test getting filter options on empty database."""
+        filters = connected_db.get_filter_options()
+        assert isinstance(filters, dict)
+        assert "sessions" in filters
+        assert "topics" in filters
+        assert "eventtypes" in filters
+        assert filters["sessions"] == []
+        assert filters["topics"] == []
+        assert filters["eventtypes"] == []
+
+    def test_get_filter_options_with_data(self, connected_db):
+        """Test getting filter options with sample data."""
+        # Insert sample papers with different filters
+        cursor = connected_db.connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO papers (name, session, topic, eventtype)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("Paper 1", "Session A", "Machine Learning", "Poster"),
+        )
+        cursor.execute(
+            """
+            INSERT INTO papers (name, session, topic, eventtype)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("Paper 2", "Session B", "Computer Vision", "Oral"),
+        )
+        cursor.execute(
+            """
+            INSERT INTO papers (name, session, topic, eventtype)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("Paper 3", "Session A", "Machine Learning", "Poster"),
+        )
+        connected_db.connection.commit()
+
+        filters = connected_db.get_filter_options()
+        assert isinstance(filters, dict)
+        assert sorted(filters["sessions"]) == ["Session A", "Session B"]
+        assert sorted(filters["topics"]) == ["Computer Vision", "Machine Learning"]
+        assert sorted(filters["eventtypes"]) == ["Oral", "Poster"]

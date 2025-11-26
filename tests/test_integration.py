@@ -531,11 +531,11 @@ class TestIntegration:
             learning_papers = db.search_papers(keyword="learning")
             assert len(learning_papers) >= 1
 
-            # Test 4: Topic search
-            cv_papers = db.search_papers(topic="Computer Vision")
-            assert len(cv_papers) >= 1
+            # Test 4: Topic search (exact match)
+            vision_papers = db.search_papers(topic="Applications->Vision")
+            assert len(vision_papers) >= 1
 
-            theory_papers = db.search_papers(topic="Theory")
+            theory_papers = db.search_papers(topic="Theory->Learning Theory")
             assert len(theory_papers) >= 1
 
             # Test 5: Verify author extraction and relationships

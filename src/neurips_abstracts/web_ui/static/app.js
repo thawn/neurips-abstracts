@@ -8,6 +8,7 @@ let chatHistory = [];
 // Initialize app
 document.addEventListener('DOMContentLoaded', function () {
     loadStats();
+    loadFilterOptions();
 });
 
 // Tab switching
@@ -54,11 +55,80 @@ async function loadStats() {
     }
 }
 
+// Load filter options
+async function loadFilterOptions() {
+    try {
+        const response = await fetch(`${API_BASE}/api/filters`);
+        const data = await response.json();
+
+        if (data.error) {
+            console.error('Error loading filters:', data.error);
+            return;
+        }
+
+        // Populate session filter
+        const sessionSelect = document.getElementById('session-filter');
+        data.sessions.forEach(session => {
+            const option = document.createElement('option');
+            option.value = session;
+            option.textContent = session;
+            option.selected = true; // Select all by default
+            sessionSelect.appendChild(option);
+        });
+
+        // Populate topic filter
+        const topicSelect = document.getElementById('topic-filter');
+        data.topics.forEach(topic => {
+            const option = document.createElement('option');
+            option.value = topic;
+            option.textContent = topic;
+            option.selected = true; // Select all by default
+            topicSelect.appendChild(option);
+        });
+
+        // Populate eventtype filter
+        const eventtypeSelect = document.getElementById('eventtype-filter');
+        data.eventtypes.forEach(eventtype => {
+            const option = document.createElement('option');
+            option.value = eventtype;
+            option.textContent = eventtype;
+            option.selected = true; // Select all by default
+            eventtypeSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading filter options:', error);
+    }
+}
+
+// Select all options in a filter
+function selectAllFilter(filterId) {
+    const select = document.getElementById(filterId);
+    Array.from(select.options).forEach(option => {
+        option.selected = true;
+    });
+}
+
+// Deselect all options in a filter
+function deselectAllFilter(filterId) {
+    const select = document.getElementById(filterId);
+    Array.from(select.options).forEach(option => {
+        option.selected = false;
+    });
+}
+
 // Search papers
 async function searchPapers() {
     const query = document.getElementById('search-input').value.trim();
-    const useEmbeddings = document.getElementById('use-embeddings').checked;
     const limit = parseInt(document.getElementById('limit-select').value);
+
+    // Get multiple selected values from multi-select dropdowns
+    const sessionSelect = document.getElementById('session-filter');
+    const topicSelect = document.getElementById('topic-filter');
+    const eventtypeSelect = document.getElementById('eventtype-filter');
+
+    const sessions = Array.from(sessionSelect.selectedOptions).map(opt => opt.value);
+    const topics = Array.from(topicSelect.selectedOptions).map(opt => opt.value);
+    const eventtypes = Array.from(eventtypeSelect.selectedOptions).map(opt => opt.value);
 
     if (!query) {
         showError('Please enter a search query');
@@ -74,16 +144,23 @@ async function searchPapers() {
     `;
 
     try {
+        const requestBody = {
+            query,
+            use_embeddings: true,
+            limit
+        };
+
+        // Add filters if they are selected (send as arrays)
+        if (sessions.length > 0) requestBody.sessions = sessions;
+        if (topics.length > 0) requestBody.topics = topics;
+        if (eventtypes.length > 0) requestBody.eventtypes = eventtypes;
+
         const response = await fetch(`${API_BASE}/api/search`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                query,
-                use_embeddings: useEmbeddings,
-                limit
-            })
+            body: JSON.stringify(requestBody)
         });
 
         const data = await response.json();

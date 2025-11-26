@@ -144,6 +144,24 @@ def stats():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/filters")
+def get_filters():
+    """
+    Get available filter options.
+
+    Returns
+    -------
+    dict
+        Dictionary with sessions, topics, and eventtypes lists
+    """
+    try:
+        database = get_database()
+        filters = database.get_filter_options()
+        return jsonify(filters)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/search", methods=["POST"])
 def search():
     """
@@ -153,6 +171,9 @@ def search():
     - query: str - Search query
     - use_embeddings: bool - Use semantic search
     - limit: int - Maximum results (default: 10)
+    - sessions: list[str] - Filter by sessions (optional)
+    - topics: list[str] - Filter by topics (optional)
+    - eventtypes: list[str] - Filter by event types (optional)
 
     Returns
     -------
@@ -164,6 +185,9 @@ def search():
         query = data.get("query", "")
         use_embeddings = data.get("use_embeddings", False)
         limit = data.get("limit", 10)
+        sessions = data.get("sessions", [])
+        topics = data.get("topics", [])
+        eventtypes = data.get("eventtypes", [])
 
         if not query:
             return jsonify({"error": "Query is required"}), 400
@@ -172,7 +196,7 @@ def search():
             # Semantic search using embeddings
             em = get_embeddings_manager()
             database = get_database()
-            results = em.search_similar(query, n_results=limit)
+            results = em.search_similar(query, n_results=limit * 3)  # Get more results to filter
 
             # Transform ChromaDB results to paper format using shared utility
             try:
@@ -180,10 +204,26 @@ def search():
             except PaperFormattingError as e:
                 # No valid papers found
                 return jsonify({"papers": [], "count": 0, "query": query, "use_embeddings": use_embeddings})
+
+            # Apply filters to semantic search results (support multiple values)
+            if sessions or topics or eventtypes:
+                filtered_papers = []
+                for paper in papers:
+                    # Check if paper matches ANY of the selected values for each filter
+                    if sessions and paper.get("session") not in sessions:
+                        continue
+                    if topics and paper.get("topic") not in topics:
+                        continue
+                    if eventtypes and paper.get("eventtype") not in eventtypes:
+                        continue
+                    filtered_papers.append(paper)
+                papers = filtered_papers[:limit]  # Limit after filtering
         else:
-            # Keyword search in database
+            # Keyword search in database with multiple filter support
             database = get_database()
-            papers = database.search_papers(keyword=query, limit=limit)
+            papers = database.search_papers(
+                keyword=query, sessions=sessions, topics=topics, eventtypes=eventtypes, limit=limit
+            )
 
             # Convert to list of dicts for JSON serialization
             papers = [dict(p) for p in papers]

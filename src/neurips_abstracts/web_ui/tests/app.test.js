@@ -53,6 +53,9 @@ function loadAppJs() {
     return {
         switchTab,
         loadStats,
+        loadFilterOptions,
+        selectAllFilter,
+        deselectAllFilter,
         searchPapers,
         displaySearchResults,
         showPaperDetails,
@@ -76,8 +79,10 @@ describe('NeurIPS Abstracts Web UI', () => {
             <div id="search-tab" class="tab-content"></div>
             <div id="chat-tab" class="tab-content hidden"></div>
             <input id="search-input" value="" />
-            <input id="use-embeddings" type="checkbox" />
             <select id="limit-select"><option value="10">10</option></select>
+            <select id="session-filter" multiple></select>
+            <select id="topic-filter" multiple></select>
+            <select id="eventtype-filter" multiple></select>
             <div id="search-results"></div>
             <input id="chat-input" value="" />
             <select id="n-papers"><option value="3">3</option></select>
@@ -184,6 +189,115 @@ describe('NeurIPS Abstracts Web UI', () => {
 
             const statsDiv = document.getElementById('stats');
             expect(statsDiv.innerHTML).toContain('Error loading stats');
+        });
+    });
+
+    describe('loadFilterOptions', () => {
+        test('should load and populate filter options successfully', async () => {
+            const mockFilters = {
+                sessions: ['Session 1', 'Session 2'],
+                topics: ['Machine Learning', 'Computer Vision'],
+                eventtypes: ['Poster', 'Oral']
+            };
+
+            fetch.mockResolvedValueOnce({
+                json: async () => mockFilters
+            });
+
+            await app.loadFilterOptions();
+
+            const sessionSelect = document.getElementById('session-filter');
+            const topicSelect = document.getElementById('topic-filter');
+            const eventtypeSelect = document.getElementById('eventtype-filter');
+
+            expect(sessionSelect.options.length).toBe(2); // Two sessions
+            expect(topicSelect.options.length).toBe(2); // Two topics
+            expect(eventtypeSelect.options.length).toBe(2); // Two eventtypes
+
+            // Check that all options are selected by default
+            expect(Array.from(sessionSelect.options).every(opt => opt.selected)).toBe(true);
+            expect(Array.from(topicSelect.options).every(opt => opt.selected)).toBe(true);
+            expect(Array.from(eventtypeSelect.options).every(opt => opt.selected)).toBe(true);
+        });
+
+        test('should handle error response', async () => {
+            fetch.mockResolvedValueOnce({
+                json: async () => ({ error: 'Database error' })
+            });
+
+            await app.loadFilterOptions();
+
+            // Should not throw, just log error
+            const sessionSelect = document.getElementById('session-filter');
+            expect(sessionSelect.options.length).toBe(0); // No options added
+        });
+
+        test('should handle fetch failure', async () => {
+            fetch.mockRejectedValueOnce(new Error('Network error'));
+
+            await app.loadFilterOptions();
+
+            // Should not throw, just log error
+            const sessionSelect = document.getElementById('session-filter');
+            expect(sessionSelect.options.length).toBe(0); // No options added
+        });
+    });
+
+    describe('selectAllFilter', () => {
+        test('should select all options in the filter', () => {
+            const sessionSelect = document.getElementById('session-filter');
+
+            // Add some options
+            const option1 = document.createElement('option');
+            option1.value = 'Session 1';
+            option1.textContent = 'Session 1';
+            option1.selected = false;
+            sessionSelect.appendChild(option1);
+
+            const option2 = document.createElement('option');
+            option2.value = 'Session 2';
+            option2.textContent = 'Session 2';
+            option2.selected = false;
+            sessionSelect.appendChild(option2);
+
+            // Load the app functions in the global scope to use selectAllFilter
+            const appJs = loadAppJs();
+
+            // Call selectAllFilter
+            appJs.selectAllFilter('session-filter');
+
+            // Check that all options are selected
+            expect(option1.selected).toBe(true);
+            expect(option2.selected).toBe(true);
+        });
+    });
+
+    describe('deselectAllFilter', () => {
+        test('should deselect all options in the filter', () => {
+            const sessionSelect = document.getElementById('session-filter');
+
+            // Add some options
+            const option1 = document.createElement('option');
+            option1.value = 'Session 1';
+            option1.textContent = 'Session 1';
+            option1.selected = true;
+            sessionSelect.appendChild(option1);
+
+            const option2 = document.createElement('option');
+            option2.value = 'Session 2';
+            option2.textContent = 'Session 2';
+            option2.selected = true;
+            sessionSelect.appendChild(option2);
+
+            // Load the app functions in the global scope to use deselectAllFilter
+            const appJs = loadAppJs();
+
+            // Call deselectAllFilter
+            appJs.deselectAllFilter('session-filter');
+
+            // Check that all options are deselected
+            expect(option1.selected).toBe(false);
+            expect(option2.selected).toBe(false);
         });
     });
 
@@ -437,11 +551,9 @@ describe('NeurIPS Abstracts Web UI', () => {
 
         test('should send correct request data', async () => {
             const searchInput = document.getElementById('search-input');
-            const useEmbeddings = document.getElementById('use-embeddings');
             const limitSelect = document.getElementById('limit-select');
 
             searchInput.value = 'neural networks';
-            useEmbeddings.checked = true;
 
             // Create a new option and add it
             const option = document.createElement('option');
@@ -467,6 +579,48 @@ describe('NeurIPS Abstracts Web UI', () => {
             const callBody = JSON.parse(fetch.mock.calls[0][1].body);
             expect(callBody.query).toBe('neural networks');
             expect(callBody.use_embeddings).toBe(true);
+        });
+
+        test('should send filter values when selected', async () => {
+            const searchInput = document.getElementById('search-input');
+            const sessionSelect = document.getElementById('session-filter');
+            const topicSelect = document.getElementById('topic-filter');
+            const eventtypeSelect = document.getElementById('eventtype-filter');
+
+            searchInput.value = 'machine learning';
+
+            // Add and select multiple filter options
+            const sessionOption1 = document.createElement('option');
+            sessionOption1.value = 'Session 1';
+            sessionOption1.selected = true;
+            sessionSelect.appendChild(sessionOption1);
+
+            const sessionOption2 = document.createElement('option');
+            sessionOption2.value = 'Session 2';
+            sessionOption2.selected = true;
+            sessionSelect.appendChild(sessionOption2);
+
+            const topicOption = document.createElement('option');
+            topicOption.value = 'Computer Vision';
+            topicOption.selected = true;
+            topicSelect.appendChild(topicOption);
+
+            const eventtypeOption = document.createElement('option');
+            eventtypeOption.value = 'Poster';
+            eventtypeOption.selected = true;
+            eventtypeSelect.appendChild(eventtypeOption);
+
+            fetch.mockResolvedValueOnce({
+                json: async () => ({ papers: [], count: 0 })
+            });
+
+            await app.searchPapers();
+
+            const callBody = JSON.parse(fetch.mock.calls[0][1].body);
+            expect(callBody.query).toBe('machine learning');
+            expect(callBody.sessions).toEqual(['Session 1', 'Session 2']);
+            expect(callBody.topics).toEqual(['Computer Vision']);
+            expect(callBody.eventtypes).toEqual(['Poster']);
         });
 
         test('should handle API error response', async () => {

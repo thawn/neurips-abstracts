@@ -576,8 +576,12 @@ class DatabaseManager:
         self,
         keyword: Optional[str] = None,
         topic: Optional[str] = None,
+        topics: Optional[List[str]] = None,
         decision: Optional[str] = None,
         eventtype: Optional[str] = None,
+        eventtypes: Optional[List[str]] = None,
+        session: Optional[str] = None,
+        sessions: Optional[List[str]] = None,
         limit: int = 100,
     ) -> List[sqlite3.Row]:
         """
@@ -588,11 +592,19 @@ class DatabaseManager:
         keyword : str, optional
             Keyword to search in name, abstract, topic, or keywords fields.
         topic : str, optional
-            Topic/category to filter by (e.g., "General Machine Learning->Representation Learning").
+            Single topic to filter by (deprecated, use topics instead).
+        topics : list[str], optional
+            List of topics to filter by (matches ANY).
         decision : str, optional
             Decision type to filter by (e.g., "Accept (poster)", "Accept (oral)").
         eventtype : str, optional
-            Event type to filter by (e.g., "Poster", "Oral").
+            Single event type to filter by (deprecated, use eventtypes instead).
+        eventtypes : list[str], optional
+            List of event types to filter by (matches ANY).
+        session : str, optional
+            Single session to filter by (deprecated, use sessions instead).
+        sessions : list[str], optional
+            List of sessions to filter by (matches ANY).
         limit : int, default=100
             Maximum number of results to return.
 
@@ -614,11 +626,14 @@ class DatabaseManager:
         >>> for paper in papers:
         ...     print(paper['name'])
 
-        >>> # Search by decision type
-        >>> oral_papers = db.search_papers(decision="Accept (oral)")
+        >>> # Search with multiple sessions
+        >>> papers = db.search_papers(sessions=["Session 1", "Session 2"])
 
-        >>> # Search by event type
-        >>> posters = db.search_papers(eventtype="Poster")
+        >>> # Search with multiple topics and eventtypes
+        >>> papers = db.search_papers(
+        ...     topics=["Machine Learning", "Computer Vision"],
+        ...     eventtypes=["Poster", "Oral"]
+        ... )
         """
         conditions = []
         parameters = []
@@ -628,17 +643,30 @@ class DatabaseManager:
             search_term = f"%{keyword}%"
             parameters.extend([search_term, search_term, search_term, search_term])
 
-        if topic:
-            conditions.append("topic LIKE ?")
-            parameters.append(f"%{topic}%")
+        # Handle topics (prefer list form, fall back to single)
+        topic_list = topics if topics else ([topic] if topic else [])
+        if topic_list:
+            placeholders = ",".join("?" * len(topic_list))
+            conditions.append(f"topic IN ({placeholders})")
+            parameters.extend(topic_list)
 
         if decision:
             conditions.append("decision = ?")
             parameters.append(decision)
 
-        if eventtype:
-            conditions.append("eventtype = ?")
-            parameters.append(eventtype)
+        # Handle eventtypes (prefer list form, fall back to single)
+        eventtype_list = eventtypes if eventtypes else ([eventtype] if eventtype else [])
+        if eventtype_list:
+            placeholders = ",".join("?" * len(eventtype_list))
+            conditions.append(f"eventtype IN ({placeholders})")
+            parameters.extend(eventtype_list)
+
+        # Handle sessions (prefer list form, fall back to single)
+        session_list = sessions if sessions else ([session] if session else [])
+        if session_list:
+            placeholders = ",".join("?" * len(session_list))
+            conditions.append(f"session IN ({placeholders})")
+            parameters.extend(session_list)
 
         where_clause = " AND ".join(conditions) if conditions else "1=1"
         sql = f"SELECT * FROM papers WHERE {where_clause} LIMIT ?"
@@ -790,3 +818,52 @@ class DatabaseManager:
         """
         result = self.query("SELECT COUNT(*) as count FROM authors")
         return result[0]["count"] if result else 0
+
+    def get_filter_options(self) -> dict:
+        """
+        Get distinct values for filterable fields.
+
+        Returns a dictionary with lists of distinct values for session, topic,
+        and eventtype fields that can be used to populate filter dropdowns.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys 'sessions', 'topics', 'eventtypes' containing
+            lists of distinct non-null values sorted alphabetically.
+
+        Raises
+        ------
+        DatabaseError
+            If query fails.
+
+        Examples
+        --------
+        >>> db = DatabaseManager("neurips.db")
+        >>> with db:
+        ...     filters = db.get_filter_options()
+        >>> print(filters['sessions'])
+        ['Session 1', 'Session 2', ...]
+        """
+        try:
+            # Get distinct sessions
+            sessions_result = self.query(
+                "SELECT DISTINCT session FROM papers WHERE session IS NOT NULL AND session != '' ORDER BY session"
+            )
+            sessions = [row["session"] for row in sessions_result]
+
+            # Get distinct topics
+            topics_result = self.query(
+                "SELECT DISTINCT topic FROM papers WHERE topic IS NOT NULL AND topic != '' ORDER BY topic"
+            )
+            topics = [row["topic"] for row in topics_result]
+
+            # Get distinct eventtypes
+            eventtypes_result = self.query(
+                "SELECT DISTINCT eventtype FROM papers WHERE eventtype IS NOT NULL AND eventtype != '' ORDER BY eventtype"
+            )
+            eventtypes = [row["eventtype"] for row in eventtypes_result]
+
+            return {"sessions": sessions, "topics": topics, "eventtypes": eventtypes}
+        except sqlite3.Error as e:
+            raise DatabaseError(f"Failed to get filter options: {str(e)}") from e

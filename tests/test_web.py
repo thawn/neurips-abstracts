@@ -154,6 +154,12 @@ class TestWebInterface:
         # Should return error if DB doesn't exist
         assert response.status_code in [200, 500]
 
+    def test_filters_endpoint_no_db(self, client):
+        """Test filters endpoint when database doesn't exist."""
+        response = client.get("/api/filters")
+        # Should return error if DB doesn't exist
+        assert response.status_code in [200, 500]
+
     def test_years_endpoint_no_db(self, client):
         """Test years endpoint when database doesn't exist."""
         response = client.get("/api/years")
