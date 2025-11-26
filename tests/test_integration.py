@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 
 from neurips_abstracts import download_json, DatabaseManager
 from neurips_abstracts.downloader import download_neurips_data
+from tests.test_helpers import requires_lm_studio
 
 # Fixtures imported from conftest.py:
 # - sample_neurips_data: List of 2 papers with authors
@@ -606,6 +607,7 @@ class TestIntegration:
             assert paper5_authors[1]["fullname"] == "Jane Smith"
             assert paper5_authors[2]["fullname"] == "Bob Johnson"
 
+    @requires_lm_studio
     def test_embeddings_end_to_end_with_real_data(self, tmp_path):
         """
         End-to-end test: Load real NeurIPS data, generate embeddings, and perform semantic search.
@@ -617,20 +619,10 @@ class TestIntegration:
         4. Verify results are relevant and properly ranked
         5. Test metadata filtering in vector search
 
-        Note: This test requires LM Studio to be running at http://localhost:1234.
-        The test will be skipped if LM Studio is not available.
+        Note: This test requires LM Studio to be running and is marked as slow.
+        The test will be skipped by default unless running with -m slow.
         """
-        import pytest
-        import requests
         from neurips_abstracts import DatabaseManager, EmbeddingsManager
-
-        # Check if LM Studio is available before running the test
-        try:
-            response = requests.get("http://localhost:1234/v1/models", timeout=2)
-            if response.status_code != 200:
-                pytest.skip("LM Studio is not responding correctly")
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
-            pytest.skip("LM Studio is not available at http://localhost:1234")
 
         # Use the same real data subset from test_real_neurips_data_subset
         real_data = self._get_real_neurips_subset()

@@ -411,7 +411,7 @@ pip install -e ".[dev]"
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (excluding slow tests by default)
 pytest
 
 # Run with coverage report
@@ -422,7 +422,15 @@ pytest tests/test_downloader.py
 
 # Run specific test
 pytest tests/test_database.py::TestDatabaseManager::test_connect
+
+# Run only slow tests (requires LM Studio running)
+pytest -m slow
+
+# Run all tests including slow ones
+pytest -m ""
 ```
+
+**Note:** Tests requiring LM Studio are marked as `slow` and skipped by default. To run them, use `pytest -m slow` (requires LM Studio running with a chat model loaded).
 
 ### Code Structure
 

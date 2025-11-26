@@ -81,8 +81,24 @@ def find_free_port():
     return port
 
 
-# Skip marker for tests requiring LM Studio - can be imported directly
-requires_lm_studio = pytest.mark.skipif(
-    not check_lm_studio_available(),
-    reason="LM Studio not running or no chat model loaded. Check configuration and ensure LM Studio is started with the configured chat model.",
-)
+def requires_lm_studio(func):
+    """
+    Decorator that marks tests as slow and skips them if LM Studio is not available.
+
+    This decorator:
+    1. Marks the test as 'slow' (so it's skipped by default with -m "not slow")
+    2. Skips the test if LM Studio is not running or no chat model is loaded
+
+    Usage
+    -----
+    @requires_lm_studio
+    def test_something_with_lm_studio():
+        ...
+    """
+    # Apply both slow marker and skipif condition
+    func = pytest.mark.slow(func)
+    func = pytest.mark.skipif(
+        not check_lm_studio_available(),
+        reason="LM Studio not running or no chat model loaded. Check configuration and ensure LM Studio is started with the configured chat model.",
+    )(func)
+    return func

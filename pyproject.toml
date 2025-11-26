@@ -71,11 +71,15 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (deselected by default)",
+]
 addopts = [
     "--verbose",
     "--cov=neurips_abstracts",
     "--cov-report=term-missing",
     "--cov-report=html",
+    "-m not slow",
 ]
 
 [tool.coverage.run]

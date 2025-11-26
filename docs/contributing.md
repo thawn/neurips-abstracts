@@ -82,7 +82,7 @@ def search_papers(
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (excludes slow tests by default)
 pytest
 
 # Run with coverage
@@ -99,7 +99,18 @@ pytest -v
 
 # Show print statements
 pytest -s
+
+# Run only slow tests (requires LM Studio)
+pytest -m slow
+
+# Run all tests including slow ones
+pytest -m ""
 ```
+
+**Note about slow tests:** Tests requiring LM Studio are marked as `slow` and skipped by default. This allows for faster development cycles. To run slow tests, you need:
+- LM Studio running at the configured URL (default: http://localhost:1234)
+- A chat model loaded in LM Studio
+- Use `pytest -m slow` to run only slow tests
 
 ### Writing Tests
 
