@@ -1,0 +1,1442 @@
+"""
+Unit tests for the CLI module.
+
+This module tests the command-line interface for neurips-abstracts,
+including the download and create-embeddings commands.
+"""
+
+import sqlite3
+import sys
+from pathlib import Path
+from unittest.mock import Mock, patch, MagicMock
+import pytest
+from neurips_abstracts.cli import (
+    main,
+    create_embeddings_command,
+    download_command,
+    search_command,
+)
+
+
+class TestCLI:
+    """Test cases for the CLI module."""
+
+    def test_main_no_command(self, capsys):
+        """Test main() with no command shows help."""
+        with patch.object(sys, "argv", ["neurips-abstracts"]):
+            exit_code = main()
+            assert exit_code == 1
+
+            captured = capsys.readouterr()
+            assert "usage:" in captured.out
+            assert "Available commands" in captured.out
+
+    def test_main_help(self, capsys):
+        """Test main() with --help shows help."""
+        with patch.object(sys, "argv", ["neurips-abstracts", "--help"]):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 0
+
+            captured = capsys.readouterr()
+            assert "usage:" in captured.out
+            assert "create-embeddings" in captured.out
+
+    def test_download_command_success(self, tmp_path, capsys):
+        """Test download command completes successfully."""
+        output_db = tmp_path / "test.db"
+
+        # Mock the download function
+        mock_data = [
+            {"id": 1, "title": "Paper 1", "abstract": "Abstract 1"},
+            {"id": 2, "title": "Paper 2", "abstract": "Abstract 2"},
+        ]
+
+        with patch("neurips_abstracts.cli.download_neurips_data") as mock_download:
+            mock_download.return_value = mock_data
+
+            with patch.object(
+                sys,
+                "argv",
+                ["neurips-abstracts", "download", "--year", "2025", "--output", str(output_db)],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Downloaded 2 papers" in captured.out
+        assert "Database saved to" in captured.out
+        assert output_db.exists()
+
+    def test_download_command_failure(self, tmp_path, capsys):
+        """Test download command handles errors gracefully."""
+        output_db = tmp_path / "test.db"
+
+        with patch("neurips_abstracts.cli.download_neurips_data") as mock_download:
+            mock_download.side_effect = Exception("Network error")
+
+            with patch.object(
+                sys,
+                "argv",
+                ["neurips-abstracts", "download", "--output", str(output_db)],
+            ):
+                exit_code = main()
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Error:" in captured.err
+
+    def test_create_embeddings_db_not_found(self, tmp_path, capsys):
+        """Test create-embeddings with non-existent database."""
+        nonexistent_db = tmp_path / "nonexistent.db"
+
+        with patch.object(
+            sys,
+            "argv",
+            ["neurips-abstracts", "create-embeddings", "--db-path", str(nonexistent_db)],
+        ):
+            exit_code = main()
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Database file not found" in captured.err
+
+    def test_create_embeddings_lm_studio_not_available(self, tmp_path, capsys):
+        """Test create-embeddings when LM Studio is not available."""
+        # Create a test database
+        from neurips_abstracts import DatabaseManager
+
+        db_path = tmp_path / "test.db"
+        with DatabaseManager(db_path) as db:
+            db.create_tables()
+            db.load_json_data([{"id": 1, "title": "Test", "abstract": "Abstract"}])
+
+        # Mock LM Studio connection failure
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = False
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "create-embeddings",
+                    "--db-path",
+                    str(db_path),
+                    "--output",
+                    str(tmp_path / "embeddings"),
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Failed to connect to LM Studio" in captured.err
+
+    def test_create_embeddings_success(self, tmp_path, capsys):
+        """Test create-embeddings command completes successfully."""
+        from neurips_abstracts import DatabaseManager
+
+        # Create a test database
+        db_path = tmp_path / "test.db"
+        with DatabaseManager(db_path) as db:
+            db.create_tables()
+            db.load_json_data(
+                [
+                    {"id": 1, "title": "Paper 1", "abstract": "Abstract 1"},
+                    {"id": 2, "title": "Paper 2", "abstract": "Abstract 2"},
+                ]
+            )
+
+        # Mock embeddings manager
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.embed_from_database.return_value = 2
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 2}
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "create-embeddings",
+                    "--db-path",
+                    str(db_path),
+                    "--output",
+                    str(tmp_path / "embeddings"),
+                    "--batch-size",
+                    "10",
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Successfully generated embeddings for 2 papers" in captured.out
+        assert "Vector database saved to" in captured.out
+
+    def test_create_embeddings_with_where_clause(self, tmp_path, capsys):
+        """Test create-embeddings with WHERE clause filter."""
+        from neurips_abstracts import DatabaseManager
+
+        # Create a test database
+        db_path = tmp_path / "test.db"
+        with DatabaseManager(db_path) as db:
+            db.create_tables()
+            db.load_json_data(
+                [
+                    {"id": 1, "title": "Paper 1", "abstract": "Abstract 1", "decision": "Accept"},
+                    {"id": 2, "title": "Paper 2", "abstract": "Abstract 2", "decision": "Reject"},
+                ]
+            )
+
+        # Mock embeddings manager
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.embed_from_database.return_value = 1
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 1}
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "create-embeddings",
+                    "--db-path",
+                    str(db_path),
+                    "--output",
+                    str(tmp_path / "embeddings"),
+                    "--where",
+                    "decision = 'Accept'",
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Filter will process 1 papers" in captured.out
+        assert "Successfully generated embeddings for 1 papers" in captured.out
+
+    def test_create_embeddings_force_flag(self, tmp_path, capsys):
+        """Test create-embeddings with --force flag."""
+        from neurips_abstracts import DatabaseManager
+
+        # Create a test database
+        db_path = tmp_path / "test.db"
+        with DatabaseManager(db_path) as db:
+            db.create_tables()
+            db.load_json_data([{"id": 1, "title": "Test", "abstract": "Abstract"}])
+
+        embeddings_path = tmp_path / "embeddings"
+        embeddings_path.mkdir()
+
+        # Mock embeddings manager
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.embed_from_database.return_value = 1
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 1}
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "create-embeddings",
+                    "--db-path",
+                    str(db_path),
+                    "--output",
+                    str(embeddings_path),
+                    "--force",
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Resetting existing collection" in captured.out
+
+        # Verify create_collection was called with reset=True
+        mock_em.create_collection.assert_called_once_with(reset=True)
+
+    def test_create_embeddings_custom_model(self, tmp_path, capsys):
+        """Test create-embeddings with custom model settings."""
+        from neurips_abstracts import DatabaseManager
+
+        # Create a test database
+        db_path = tmp_path / "test.db"
+        with DatabaseManager(db_path) as db:
+            db.create_tables()
+            db.load_json_data([{"id": 1, "title": "Test", "abstract": "Abstract"}])
+
+        custom_url = "http://localhost:5000"
+        custom_model = "custom-embedding-model"
+
+        # Mock embeddings manager
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.embed_from_database.return_value = 1
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 1}
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "create-embeddings",
+                    "--db-path",
+                    str(db_path),
+                    "--lm-studio-url",
+                    custom_url,
+                    "--model",
+                    custom_model,
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+
+        # Verify EmbeddingsManager was initialized with custom settings
+        MockEM.assert_called_once()
+        call_kwargs = MockEM.call_args.kwargs
+        assert call_kwargs["lm_studio_url"] == custom_url
+        assert call_kwargs["model_name"] == custom_model
+
+    def test_create_embeddings_embeddings_error(self, tmp_path, capsys):
+        """Test create-embeddings handles EmbeddingsError gracefully."""
+        from neurips_abstracts import DatabaseManager
+        from neurips_abstracts.embeddings import EmbeddingsError
+
+        # Create a test database
+        db_path = tmp_path / "test.db"
+        with DatabaseManager(db_path) as db:
+            db.create_tables()
+            db.load_json_data([{"id": 1, "title": "Test", "abstract": "Abstract"}])
+
+        # Mock embeddings manager to raise error
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.connect.side_effect = EmbeddingsError("Connection failed")
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                ["neurips-abstracts", "create-embeddings", "--db-path", str(db_path)],
+            ):
+                exit_code = main()
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Embeddings error:" in captured.err
+
+    def test_search_embeddings_not_found(self, tmp_path, capsys):
+        """Test search command with non-existent embeddings database."""
+        nonexistent_path = tmp_path / "nonexistent_embeddings"
+
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "neurips-abstracts",
+                "search",
+                "test query",
+                "--embeddings-path",
+                str(nonexistent_path),
+            ],
+        ):
+            exit_code = main()
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Embeddings database not found" in captured.err
+
+    def test_search_lm_studio_not_available(self, tmp_path, capsys):
+        """Test search command when LM Studio is not available."""
+        # Create embeddings directory
+        embeddings_path = tmp_path / "embeddings"
+        embeddings_path.mkdir()
+
+        # Mock embeddings manager with LM Studio unavailable
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = False
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "search",
+                    "test query",
+                    "--embeddings-path",
+                    str(embeddings_path),
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Failed to connect to LM Studio" in captured.err
+
+    def test_search_success(self, tmp_path, capsys):
+        """Test search command completes successfully."""
+        embeddings_path = tmp_path / "embeddings"
+        embeddings_path.mkdir()
+
+        # Mock embeddings manager with results
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 100}
+            mock_em.search_similar.return_value = {
+                "ids": [["123", "456"]],
+                "distances": [[0.1, 0.2]],
+                "metadatas": [
+                    [
+                        {
+                            "title": "Paper 1",
+                            "authors": "Author 1",
+                            "decision": "Accept",
+                            "topic": "ML",
+                        },
+                        {
+                            "title": "Paper 2",
+                            "authors": "Author 2",
+                            "decision": "Accept",
+                            "topic": "DL",
+                        },
+                    ]
+                ],
+                "documents": [["Abstract 1", "Abstract 2"]],
+            }
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "search",
+                    "test query",
+                    "--embeddings-path",
+                    str(embeddings_path),
+                    "--n-results",
+                    "2",
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Found 2 similar paper(s)" in captured.out
+        assert "Paper 1" in captured.out
+        assert "Paper 2" in captured.out
+
+    def test_search_with_abstract(self, tmp_path, capsys):
+        """Test search command with --show-abstract flag."""
+        embeddings_path = tmp_path / "embeddings"
+        embeddings_path.mkdir()
+
+        # Mock embeddings manager
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 10}
+            mock_em.search_similar.return_value = {
+                "ids": [["789"]],
+                "distances": [[0.15]],
+                "metadatas": [[{"title": "Test Paper", "authors": "Test Author", "decision": "Accept"}]],
+                "documents": [["This is a test abstract about machine learning."]],
+            }
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "search",
+                    "machine learning",
+                    "--embeddings-path",
+                    str(embeddings_path),
+                    "--show-abstract",
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Test Paper" in captured.out
+        assert "Abstract: This is a test abstract" in captured.out
+
+    def test_search_with_filter(self, tmp_path, capsys):
+        """Test search command with metadata filter."""
+        embeddings_path = tmp_path / "embeddings"
+        embeddings_path.mkdir()
+
+        # Mock embeddings manager
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 50}
+            mock_em.search_similar.return_value = {
+                "ids": [["111"]],
+                "distances": [[0.05]],
+                "metadatas": [
+                    [
+                        {
+                            "title": "Filtered Paper",
+                            "authors": "Author",
+                            "decision": "Accept (poster)",
+                        }
+                    ]
+                ],
+                "documents": [["Abstract"]],
+            }
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "search",
+                    "neural networks",
+                    "--embeddings-path",
+                    str(embeddings_path),
+                    "--where",
+                    "decision=Accept (poster)",
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Filter: {'decision': 'Accept (poster)'}" in captured.out
+        assert "Filtered Paper" in captured.out
+
+    def test_search_no_results(self, tmp_path, capsys):
+        """Test search command with no results."""
+        embeddings_path = tmp_path / "embeddings"
+        embeddings_path.mkdir()
+
+        # Mock embeddings manager with empty results
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 100}
+            mock_em.search_similar.return_value = {"ids": [[]], "distances": [[]], "metadatas": [[]]}
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "search",
+                    "nonexistent topic",
+                    "--embeddings-path",
+                    str(embeddings_path),
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "No results found" in captured.out
+
+    def test_search_with_db_path_author_names(self, tmp_path, capsys):
+        """Test search command with database path to resolve author names."""
+        embeddings_path = tmp_path / "embeddings"
+        embeddings_path.mkdir()
+
+        # Create a test database with authors
+        db_path = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db_path))
+        cursor = conn.cursor()
+
+        # Create tables
+        cursor.execute(
+            """
+            CREATE TABLE papers (
+                id INTEGER PRIMARY KEY,
+                name TEXT,
+                authors TEXT
+            )
+        """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE authors (
+                id INTEGER PRIMARY KEY,
+                fullname TEXT,
+                url TEXT,
+                institution TEXT
+            )
+        """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE paper_authors (
+                paper_id INTEGER,
+                author_id INTEGER,
+                author_order INTEGER
+            )
+        """
+        )
+
+        # Insert test data
+        cursor.execute("INSERT INTO papers VALUES (1, 'Test Paper', '101,102')")
+        cursor.execute("INSERT INTO authors VALUES (101, 'John Doe', 'url1', 'MIT')")
+        cursor.execute("INSERT INTO authors VALUES (102, 'Jane Smith', 'url2', 'Stanford')")
+        cursor.execute("INSERT INTO paper_authors VALUES (1, 101, 1)")
+        cursor.execute("INSERT INTO paper_authors VALUES (1, 102, 2)")
+        conn.commit()
+        conn.close()
+
+        # Mock embeddings manager
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 1}
+            mock_em.search_similar.return_value = {
+                "ids": [["1"]],
+                "distances": [[0.1]],
+                "metadatas": [
+                    [
+                        {
+                            "title": "Test Paper",
+                            "authors": "101,102",
+                            "decision": "Accept",
+                            "topic": "ML",
+                            "paper_url": "https://example.com/paper/1",
+                            "poster_position": "A12",
+                        }
+                    ]
+                ],
+                "documents": [["Test abstract"]],
+            }
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "search",
+                    "test",
+                    "--embeddings-path",
+                    str(embeddings_path),
+                    "--db-path",
+                    str(db_path),
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        # Should show author names instead of IDs
+        assert "John Doe, Jane Smith" in captured.out
+        assert "https://example.com/paper/1" in captured.out
+        assert "A12" in captured.out
+
+    def test_search_with_db_path_missing_database(self, tmp_path, capsys):
+        """Test search command with non-existent database path."""
+        embeddings_path = tmp_path / "embeddings"
+        embeddings_path.mkdir()
+        nonexistent_db = tmp_path / "nonexistent.db"
+
+        # Mock embeddings manager
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 1}
+            mock_em.search_similar.return_value = {
+                "ids": [["1"]],
+                "distances": [[0.1]],
+                "metadatas": [[{"title": "Test", "authors": "101,102", "decision": "Accept"}]],
+            }
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "search",
+                    "test",
+                    "--embeddings-path",
+                    str(embeddings_path),
+                    "--db-path",
+                    str(nonexistent_db),
+                ],
+            ):
+                exit_code = main()
+
+        # Should succeed but fall back to author IDs (no author name resolution)
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "101,102" in captured.out  # Shows IDs as fallback
+
+    def test_search_with_db_path_lookup_error(self, tmp_path, capsys):
+        """Test search command when database connection fails."""
+        embeddings_path = tmp_path / "embeddings"
+        embeddings_path.mkdir()
+
+        # Create a database but DatabaseManager will fail to connect
+        db_path = tmp_path / "test.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.close()
+
+        # Mock embeddings manager
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 1}
+            mock_em.search_similar.return_value = {
+                "ids": [["1"]],
+                "distances": [[0.1]],
+                "metadatas": [[{"title": "Test", "authors": "101", "decision": "Accept"}]],
+            }
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            # Mock DatabaseManager to raise exception on connect
+            with patch("neurips_abstracts.cli.DatabaseManager") as MockDB:
+                mock_db = Mock()
+                mock_db.connect.side_effect = Exception("Connection failed")
+                MockDB.return_value = mock_db
+
+                with patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "neurips-abstracts",
+                        "search",
+                        "test",
+                        "--embeddings-path",
+                        str(embeddings_path),
+                        "--db-path",
+                        str(db_path),
+                    ],
+                ):
+                    exit_code = main()
+
+        # Should succeed with warning
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Could not open database for author names" in captured.err
+        assert "101" in captured.out  # Falls back to IDs
+
+    def test_search_unexpected_exception(self, tmp_path, capsys):
+        """Test search command with unexpected exception."""
+        embeddings_path = tmp_path / "embeddings"
+        embeddings_path.mkdir()
+
+        # Mock embeddings manager to raise unexpected exception
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.get_collection_stats.side_effect = Exception("Unexpected error")
+            mock_em.__enter__ = Mock(return_value=mock_em)
+            mock_em.__exit__ = Mock(return_value=False)
+            MockEM.return_value = mock_em
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "search",
+                    "test",
+                    "--embeddings-path",
+                    str(embeddings_path),
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Unexpected error" in captured.err
+
+
+class TestChatCommand:
+    """Test cases for the chat command."""
+
+    def test_chat_embeddings_not_found(self, tmp_path, capsys):
+        """Test chat command when embeddings don't exist."""
+        from neurips_abstracts.cli import chat_command
+        import argparse
+
+        args = argparse.Namespace(
+            embeddings_path=str(tmp_path / "nonexistent"),
+            collection="test",
+            model="test-model",
+            lm_studio_url="http://localhost:1234",
+            max_context=5,
+            temperature=0.7,
+            show_sources=False,
+            export=None,
+        )
+
+        exit_code = chat_command(args)
+        assert exit_code == 1
+
+        captured = capsys.readouterr()
+        assert "Embeddings database not found" in captured.err
+
+    def test_chat_lm_studio_not_available(self, tmp_path, capsys):
+        """Test chat command when LM Studio is not available."""
+        from neurips_abstracts.cli import chat_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            embeddings_path=str(embeddings_path),
+            collection="test",
+            model="test-model",
+            lm_studio_url="http://localhost:1234",
+            max_context=5,
+            temperature=0.7,
+            show_sources=False,
+            export=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = False
+            MockEM.return_value = mock_em
+
+            exit_code = chat_command(args)
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Failed to connect to LM Studio" in captured.err
+
+    def test_chat_rag_error(self, tmp_path, capsys):
+        """Test chat command with RAG error."""
+        from neurips_abstracts.cli import chat_command
+        from neurips_abstracts.rag import RAGError
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            embeddings_path=str(embeddings_path),
+            collection="test",
+            model="test-model",
+            lm_studio_url="http://localhost:1234",
+            max_context=5,
+            temperature=0.7,
+            show_sources=False,
+            export=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = Mock()
+            mock_em.test_lm_studio_connection.return_value = True
+            mock_em.get_collection_stats.return_value = {"name": "test", "count": 100}
+            MockEM.return_value = mock_em
+
+            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+                MockRAG.side_effect = RAGError("Test RAG error")
+
+                exit_code = chat_command(args)
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "RAG error" in captured.err
+
+
+class TestWebUICommand:
+    """Test cases for the web-ui command."""
+
+    def test_web_ui_flask_not_installed(self, capsys):
+        """Test web-ui command when Flask is not installed."""
+        from neurips_abstracts.cli import web_ui_command
+        import argparse
+
+        args = argparse.Namespace(host="127.0.0.1", port=5000, debug=False)
+
+        # Mock the import at the location where it happens (inside web_ui_command)
+        with patch.dict("sys.modules", {"neurips_abstracts.web_ui": None}):
+            # Make importing web_ui raise ImportError
+            import sys
+
+            def mock_import(name, *args, **kwargs):
+                if name == "neurips_abstracts.web_ui":
+                    raise ImportError("No module named 'flask'")
+                return __import__(name, *args, **kwargs)
+
+            with patch("builtins.__import__", wraps=mock_import) as mock:
+                exit_code = web_ui_command(args)
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Web UI dependencies not installed" in captured.err
+
+    def test_web_ui_keyboard_interrupt(self, capsys):
+        """Test web-ui command handles keyboard interrupt gracefully."""
+        from neurips_abstracts.cli import web_ui_command
+        import argparse
+
+        args = argparse.Namespace(host="127.0.0.1", port=5000, debug=False)
+
+        # Mock run_server at the location where it's used after import
+        with patch("neurips_abstracts.web_ui.run_server", side_effect=KeyboardInterrupt()):
+            exit_code = web_ui_command(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Server stopped" in captured.out
+
+    def test_web_ui_unexpected_error(self, capsys):
+        """Test web-ui command handles unexpected errors."""
+        from neurips_abstracts.cli import web_ui_command
+        import argparse
+
+        args = argparse.Namespace(host="127.0.0.1", port=5000, debug=False)
+
+        # Mock run_server at the location where it's used after import
+        with patch("neurips_abstracts.web_ui.run_server", side_effect=Exception("Test error")):
+            exit_code = web_ui_command(args)
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Error starting web server" in captured.err
+
+
+class TestMainDispatch:
+    """Test main() command dispatch."""
+
+    def test_main_chat_command(self, tmp_path):
+        """Test main() dispatches chat command."""
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        with patch.object(sys, "argv", ["neurips-abstracts", "chat", "--embeddings-path", str(embeddings_path)]):
+            with patch("neurips_abstracts.cli.chat_command") as mock_chat:
+                mock_chat.return_value = 0
+                exit_code = main()
+
+        assert exit_code == 0
+        mock_chat.assert_called_once()
+
+    def test_main_web_ui_command(self):
+        """Test main() dispatches web-ui command."""
+        with patch.object(sys, "argv", ["neurips-abstracts", "web-ui"]):
+            with patch("neurips_abstracts.cli.web_ui_command") as mock_web:
+                mock_web.return_value = 0
+                exit_code = main()
+
+        assert exit_code == 0
+        mock_web.assert_called_once()
+
+
+class TestCLISearchErrorHandling:
+    """Test search command error handling paths."""
+
+    def test_search_command_where_parse_warning(self, tmp_path, capsys):
+        """Test warning when where clause cannot be parsed (lines 229-230)."""
+        from neurips_abstracts.cli import search_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            query="test",
+            embeddings_path=str(embeddings_path),
+            lm_studio_url="http://localhost:1234",
+            model="test-model",
+            collection="test_collection",
+            n_results=5,
+            show_abstract=False,
+            where="invalid_no_equals_sign",  # Will fail parsing - no = sign
+            db_path=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = MockEM.return_value
+            mock_em.connect.return_value = None
+            mock_em.create_collection.return_value = None
+            mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
+            mock_em.search_similar.return_value = {
+                "ids": [[]],
+                "distances": [[]],
+                "documents": [[]],
+            }
+
+            exit_code = search_command(args)
+
+        assert exit_code == 0  # Should still succeed
+        captured = capsys.readouterr()
+        # Should show warning about filter parsing
+        assert "Warning" in captured.err or "Could not parse" in captured.err
+
+    def test_search_command_general_exception(self, tmp_path, capsys):
+        """Test general exception handling in search (lines 308-309)."""
+        from neurips_abstracts.cli import search_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            query="test",
+            embeddings_path=str(embeddings_path),
+            lm_studio_url="http://localhost:1234",
+            model="test-model",
+            collection="test_collection",
+            n_results=5,
+            show_abstract=False,
+            where=None,
+            db_path=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            # Make EmbeddingsManager raise unexpected exception
+            MockEM.side_effect = RuntimeError("Unexpected error")
+
+            exit_code = search_command(args)
+
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "Unexpected error" in captured.err
+
+
+class TestCLIEmbeddingsProgressAndStats:
+    """Test embeddings command progress and stats display."""
+
+    def test_create_embeddings_success_displays_stats(self, tmp_path, capsys):
+        """Test that successful embedding displays stats (lines 131-136, 147-152)."""
+        from neurips_abstracts.cli import main
+        import argparse
+
+        db_path = tmp_path / "test.db"
+
+        # Create test database
+        from neurips_abstracts.database import DatabaseManager
+
+        db = DatabaseManager(str(db_path))
+        with db:
+            db.create_tables()
+            cursor = db.connection.cursor()
+            for i in range(3):
+                cursor.execute(
+                    "INSERT INTO papers (uid, name, abstract, decision) VALUES (?, ?, ?, ?)",
+                    (f"test{i}", f"Paper {i}", f"Abstract {i}", "Accept"),
+                )
+            db.connection.commit()
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = MockEM.return_value
+            mock_em.collection_exists.return_value = False
+
+            # Mock embed_from_database to simulate progress callbacks
+            progress_callback = None
+
+            def mock_embed(db_path, batch_size, where_clause, progress_callback):
+                # Simulate calling progress callback
+                if progress_callback:
+                    progress_callback(1)
+                    progress_callback(1)
+                    progress_callback(1)
+                return 3
+
+            mock_em.embed_from_database.side_effect = mock_embed
+            mock_em.get_collection_stats.return_value = {
+                "name": "neurips_papers",
+                "count": 3,
+            }
+
+            with patch.object(
+                sys,
+                "argv",
+                [
+                    "neurips-abstracts",
+                    "create-embeddings",
+                    "--db-path",
+                    str(db_path),
+                    "--output",
+                    str(tmp_path / "chroma_db"),
+                ],
+            ):
+                exit_code = main()
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        # Check stats are displayed (lines 132-136)
+        assert "Collection Statistics" in captured.out
+        assert "neurips_papers" in captured.out
+        assert "3" in captured.out
+
+
+class TestCLIChatInteractiveLoop:
+    """Test chat command interactive loop paths."""
+
+    def test_chat_empty_input_continues(self, tmp_path, capsys):
+        """Test that empty input is skipped in chat loop."""
+        from neurips_abstracts.cli import chat_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            embeddings_path=str(embeddings_path),
+            lm_studio_url="http://localhost:1234",
+            model="test-model",
+            collection="test_collection",
+            max_context=3,
+            temperature=0.7,
+            show_sources=False,
+            export=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = MockEM.return_value
+            mock_em.connect.return_value = None
+            mock_em.create_collection.return_value = None
+            mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
+
+            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+                mock_rag = MockRAG.return_value
+
+                # Simulate: empty input, then exit
+                with patch("builtins.input", side_effect=["", "   ", "exit"]):
+                    exit_code = chat_command(args)
+
+        assert exit_code == 0
+        # Chat should have exited cleanly without processing empty inputs
+
+    def test_chat_quit_command(self, tmp_path, capsys):
+        """Test chat exits on 'quit' command."""
+        from neurips_abstracts.cli import chat_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            embeddings_path=str(embeddings_path),
+            lm_studio_url="http://localhost:1234",
+            model="test-model",
+            collection="test_collection",
+            max_context=3,
+            temperature=0.7,
+            show_sources=False,
+            export=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = MockEM.return_value
+            mock_em.connect.return_value = None
+            mock_em.create_collection.return_value = None
+            mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
+
+            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+                # Test 'quit' command
+                with patch("builtins.input", side_effect=["quit"]):
+                    exit_code = chat_command(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Goodbye" in captured.out
+
+    def test_chat_q_command(self, tmp_path, capsys):
+        """Test chat exits on 'q' command."""
+        from neurips_abstracts.cli import chat_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            embeddings_path=str(embeddings_path),
+            lm_studio_url="http://localhost:1234",
+            model="test-model",
+            collection="test_collection",
+            max_context=3,
+            temperature=0.7,
+            show_sources=False,
+            export=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = MockEM.return_value
+            mock_em.connect.return_value = None
+            mock_em.create_collection.return_value = None
+            mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
+
+            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+                # Test 'q' command
+                with patch("builtins.input", side_effect=["q"]):
+                    exit_code = chat_command(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Goodbye" in captured.out
+
+    def test_chat_reset_command(self, tmp_path, capsys):
+        """Test chat reset command works."""
+        from neurips_abstracts.cli import chat_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            embeddings_path=str(embeddings_path),
+            lm_studio_url="http://localhost:1234",
+            model="test-model",
+            collection="test_collection",
+            max_context=3,
+            temperature=0.7,
+            show_sources=False,
+            export=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = MockEM.return_value
+            mock_em.connect.return_value = None
+            mock_em.create_collection.return_value = None
+            mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
+
+            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+                mock_rag = MockRAG.return_value
+
+                # Test reset then exit
+                with patch("builtins.input", side_effect=["reset", "exit"]):
+                    exit_code = chat_command(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Conversation history cleared" in captured.out
+        mock_rag.reset_conversation.assert_called_once()
+
+    def test_chat_help_command(self, tmp_path, capsys):
+        """Test chat help command displays help."""
+        from neurips_abstracts.cli import chat_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            embeddings_path=str(embeddings_path),
+            lm_studio_url="http://localhost:1234",
+            model="test-model",
+            collection="test_collection",
+            max_context=3,
+            temperature=0.7,
+            show_sources=False,
+            export=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = MockEM.return_value
+            mock_em.connect.return_value = None
+            mock_em.create_collection.return_value = None
+            mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
+
+            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+                # Test help then exit
+                with patch("builtins.input", side_effect=["help", "exit"]):
+                    exit_code = chat_command(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Available commands" in captured.out
+        assert "exit" in captured.out.lower()
+        assert "reset" in captured.out.lower()
+
+    def test_chat_with_query_and_show_sources(self, tmp_path, capsys):
+        """Test chat processes query and shows sources."""
+        from neurips_abstracts.cli import chat_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            embeddings_path=str(embeddings_path),
+            lm_studio_url="http://localhost:1234",
+            model="test-model",
+            collection="test_collection",
+            max_context=3,
+            temperature=0.7,
+            show_sources=True,  # Enable source display
+            export=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = MockEM.return_value
+            mock_em.connect.return_value = None
+            mock_em.create_collection.return_value = None
+            mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
+
+            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+                mock_rag = MockRAG.return_value
+                mock_rag.query.return_value = {
+                    "response": "Test response about transformers",
+                    "metadata": {"n_papers": 2},
+                    "papers": [
+                        {"title": "Attention Is All You Need", "similarity": 0.95},
+                        {"title": "BERT", "similarity": 0.89},
+                    ],
+                }
+
+                # Ask question then exit
+                with patch("builtins.input", side_effect=["What are transformers?", "exit"]):
+                    exit_code = chat_command(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        # Check that response was displayed
+        assert "Test response about transformers" in captured.out
+        # Check that sources were displayed
+        assert "Source papers" in captured.out
+        assert "Attention Is All You Need" in captured.out
+
+    def test_chat_with_export(self, tmp_path, capsys):
+        """Test chat exports conversation at end."""
+        from neurips_abstracts.cli import chat_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+        export_file = tmp_path / "conversation.json"
+
+        args = argparse.Namespace(
+            embeddings_path=str(embeddings_path),
+            lm_studio_url="http://localhost:1234",
+            model="test-model",
+            collection="test_collection",
+            max_context=3,
+            temperature=0.7,
+            show_sources=False,
+            export=str(export_file),  # Export enabled
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = MockEM.return_value
+            mock_em.connect.return_value = None
+            mock_em.create_collection.return_value = None
+            mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
+
+            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+                mock_rag = MockRAG.return_value
+
+                # Exit immediately
+                with patch("builtins.input", side_effect=["exit"]):
+                    exit_code = chat_command(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Conversation exported" in captured.out
+        mock_rag.export_conversation.assert_called_once()
+
+    def test_chat_keyboard_interrupt(self, tmp_path, capsys):
+        """Test chat handles Ctrl+C gracefully."""
+        from neurips_abstracts.cli import chat_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            embeddings_path=str(embeddings_path),
+            lm_studio_url="http://localhost:1234",
+            model="test-model",
+            collection="test_collection",
+            max_context=3,
+            temperature=0.7,
+            show_sources=False,
+            export=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = MockEM.return_value
+            mock_em.connect.return_value = None
+            mock_em.create_collection.return_value = None
+            mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
+
+            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+                # Simulate Ctrl+C
+                with patch("builtins.input", side_effect=KeyboardInterrupt()):
+                    exit_code = chat_command(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Goodbye" in captured.out
+
+    def test_chat_eoferror(self, tmp_path, capsys):
+        """Test chat handles EOF (Ctrl+D) gracefully."""
+        from neurips_abstracts.cli import chat_command
+        import argparse
+
+        embeddings_path = tmp_path / "chroma_db"
+        embeddings_path.mkdir()
+
+        args = argparse.Namespace(
+            embeddings_path=str(embeddings_path),
+            lm_studio_url="http://localhost:1234",
+            model="test-model",
+            collection="test_collection",
+            max_context=3,
+            temperature=0.7,
+            show_sources=False,
+            export=None,
+        )
+
+        with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
+            mock_em = MockEM.return_value
+            mock_em.connect.return_value = None
+            mock_em.create_collection.return_value = None
+            mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
+
+            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+                # Simulate EOF
+                with patch("builtins.input", side_effect=EOFError()):
+                    exit_code = chat_command(args)
+
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert "Goodbye" in captured.out

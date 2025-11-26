@@ -1,0 +1,260 @@
+"""
+Tests for configuration module.
+
+This module tests the configuration loading and management functionality.
+"""
+
+import os
+import tempfile
+from pathlib import Path
+
+import pytest
+
+from neurips_abstracts.config import Config, get_config, load_env_file
+
+
+class TestLoadEnvFile:
+    """Test .env file loading."""
+
+    def test_load_env_file_basic(self, tmp_path):
+        """Test loading a basic .env file."""
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            """
+# Comment line
+CHAT_MODEL=test-model
+EMBEDDING_MODEL=test-embedding
+LLM_BACKEND_URL=http://test:8080
+
+# Another comment
+MAX_CONTEXT_PAPERS=10
+"""
+        )
+
+        env_vars = load_env_file(env_file)
+
+        assert env_vars["CHAT_MODEL"] == "test-model"
+        assert env_vars["EMBEDDING_MODEL"] == "test-embedding"
+        assert env_vars["LLM_BACKEND_URL"] == "http://test:8080"
+        assert env_vars["MAX_CONTEXT_PAPERS"] == "10"
+
+    def test_load_env_file_with_quotes(self, tmp_path):
+        """Test loading .env file with quoted values."""
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            """
+CHAT_MODEL="quoted-model"
+EMBEDDING_MODEL='single-quoted'
+LLM_BACKEND_URL=http://localhost:1234
+"""
+        )
+
+        env_vars = load_env_file(env_file)
+
+        assert env_vars["CHAT_MODEL"] == "quoted-model"
+        assert env_vars["EMBEDDING_MODEL"] == "single-quoted"
+        assert env_vars["LLM_BACKEND_URL"] == "http://localhost:1234"
+
+    def test_load_env_file_empty_lines(self, tmp_path):
+        """Test loading .env file with empty lines."""
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            """
+CHAT_MODEL=model1
+
+EMBEDDING_MODEL=model2
+
+
+LLM_BACKEND_URL=http://test
+"""
+        )
+
+        env_vars = load_env_file(env_file)
+
+        assert len(env_vars) == 3
+        assert env_vars["CHAT_MODEL"] == "model1"
+
+    def test_load_env_file_not_found(self, tmp_path):
+        """Test loading non-existent .env file."""
+        env_vars = load_env_file(tmp_path / "nonexistent.env")
+        assert env_vars == {}
+
+    def test_load_env_file_none(self):
+        """Test loading .env file with None path."""
+        env_vars = load_env_file(None)
+        # Should return empty dict if no .env found in search path
+        assert isinstance(env_vars, dict)
+
+
+class TestConfig:
+    """Test Config class."""
+
+    def test_config_defaults(self):
+        """Test default configuration values."""
+        config = Config()
+
+        assert config.chat_model == "diffbot-small-xl-2508"
+        assert config.embedding_model == "text-embedding-qwen3-embedding-4b"
+        assert config.llm_backend_url == "http://localhost:1234"
+        assert config.llm_backend_auth_token == ""
+        assert config.embedding_db_path == "chroma_db"
+        assert config.paper_db_path == "neurips_2025.db"
+        assert config.collection_name == "neurips_papers"
+        assert config.max_context_papers == 5
+        assert config.chat_temperature == 0.7
+        assert config.chat_max_tokens == 1000
+
+    def test_config_from_env_file(self, tmp_path):
+        """Test loading configuration from .env file."""
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            """
+CHAT_MODEL=custom-chat-model
+EMBEDDING_MODEL=custom-embedding
+LLM_BACKEND_URL=http://custom:9999
+LLM_BACKEND_AUTH_TOKEN=secret-token
+EMBEDDING_DB_PATH=custom_chroma
+PAPER_DB_PATH=custom.db
+COLLECTION_NAME=custom_collection
+MAX_CONTEXT_PAPERS=15
+CHAT_TEMPERATURE=0.9
+CHAT_MAX_TOKENS=2000
+"""
+        )
+
+        config = Config(env_path=env_file)
+
+        assert config.chat_model == "custom-chat-model"
+        assert config.embedding_model == "custom-embedding"
+        assert config.llm_backend_url == "http://custom:9999"
+        assert config.llm_backend_auth_token == "secret-token"
+        assert config.embedding_db_path == "custom_chroma"
+        assert config.paper_db_path == "custom.db"
+        assert config.collection_name == "custom_collection"
+        assert config.max_context_papers == 15
+        assert config.chat_temperature == 0.9
+        assert config.chat_max_tokens == 2000
+
+    def test_config_env_vars_override_file(self, tmp_path, monkeypatch):
+        """Test that environment variables override .env file."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("CHAT_MODEL=file-model")
+
+        monkeypatch.setenv("CHAT_MODEL", "env-model")
+
+        config = Config(env_path=env_file)
+        assert config.chat_model == "env-model"
+
+    def test_config_type_conversion(self, tmp_path):
+        """Test configuration type conversion for int and float."""
+        env_file = tmp_path / ".env"
+        env_file.write_text(
+            """
+MAX_CONTEXT_PAPERS=20
+CHAT_TEMPERATURE=0.5
+CHAT_MAX_TOKENS=500
+"""
+        )
+
+        config = Config(env_path=env_file)
+
+        assert isinstance(config.max_context_papers, int)
+        assert config.max_context_papers == 20
+
+        assert isinstance(config.chat_temperature, float)
+        assert config.chat_temperature == 0.5
+
+        assert isinstance(config.chat_max_tokens, int)
+        assert config.chat_max_tokens == 500
+
+    def test_config_invalid_int_falls_back(self, tmp_path):
+        """Test that invalid int values fall back to defaults."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("MAX_CONTEXT_PAPERS=invalid")
+
+        config = Config(env_path=env_file)
+        assert config.max_context_papers == 5  # Default
+
+    def test_config_invalid_float_falls_back(self, tmp_path):
+        """Test that invalid float values fall back to defaults."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("CHAT_TEMPERATURE=invalid")
+
+        config = Config(env_path=env_file)
+        assert config.chat_temperature == 0.7  # Default
+
+    def test_config_to_dict(self):
+        """Test converting configuration to dictionary."""
+        config = Config()
+        config_dict = config.to_dict()
+
+        assert isinstance(config_dict, dict)
+        assert "chat_model" in config_dict
+        assert "embedding_model" in config_dict
+        assert "llm_backend_url" in config_dict
+        assert "embedding_db_path" in config_dict
+        assert "paper_db_path" in config_dict
+        assert "collection_name" in config_dict
+        assert "max_context_papers" in config_dict
+
+    def test_config_to_dict_hides_token(self, tmp_path):
+        """Test that to_dict hides auth token."""
+        env_file = tmp_path / ".env"
+        env_file.write_text("LLM_BACKEND_AUTH_TOKEN=secret-token-123")
+
+        config = Config(env_path=env_file)
+        config_dict = config.to_dict()
+
+        # Token should be masked
+        assert config_dict["llm_backend_auth_token"] == "***"
+        # But original value is still accessible
+        assert config.llm_backend_auth_token == "secret-token-123"
+
+    def test_config_to_dict_empty_token(self):
+        """Test that to_dict shows empty string for no token."""
+        config = Config()
+        config_dict = config.to_dict()
+
+        assert config_dict["llm_backend_auth_token"] == ""
+
+    def test_config_repr(self):
+        """Test configuration string representation."""
+        config = Config()
+        repr_str = repr(config)
+
+        assert "Config(" in repr_str
+        assert "chat_model=" in repr_str
+        assert "embedding_model=" in repr_str
+
+
+class TestGetConfig:
+    """Test get_config function."""
+
+    def test_get_config_singleton(self):
+        """Test that get_config returns same instance."""
+        config1 = get_config()
+        config2 = get_config()
+
+        assert config1 is config2
+
+    def test_get_config_reload(self, tmp_path, monkeypatch):
+        """Test that reload=True creates new instance."""
+        # Get initial config
+        config1 = get_config()
+
+        # Change environment variable
+        monkeypatch.setenv("CHAT_MODEL", "reloaded-model")
+
+        # Get config without reload - should be same instance
+        config2 = get_config(reload=False)
+        assert config2 is config1
+        assert config2.chat_model != "reloaded-model"
+
+        # Get config with reload - should be new instance
+        config3 = get_config(reload=True)
+        assert config3.chat_model == "reloaded-model"
+
+    def test_get_config_returns_config_instance(self):
+        """Test that get_config returns Config instance."""
+        config = get_config()
+        assert isinstance(config, Config)
