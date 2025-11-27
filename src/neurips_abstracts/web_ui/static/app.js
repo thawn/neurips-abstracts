@@ -327,7 +327,7 @@ async function showPaperDetails(paperId) {
 
         // Create modal
         const modal = document.createElement('div');
-        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50';
+        modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50';
         modal.onclick = (e) => {
             if (e.target === modal) modal.remove();
         };
