@@ -66,7 +66,7 @@ async function loadFilterOptions() {
             return;
         }
 
-        // Populate session filter
+        // Populate search session filter
         const sessionSelect = document.getElementById('session-filter');
         data.sessions.forEach(session => {
             const option = document.createElement('option');
@@ -76,7 +76,7 @@ async function loadFilterOptions() {
             sessionSelect.appendChild(option);
         });
 
-        // Populate topic filter
+        // Populate search topic filter
         const topicSelect = document.getElementById('topic-filter');
         data.topics.forEach(topic => {
             const option = document.createElement('option');
@@ -86,14 +86,42 @@ async function loadFilterOptions() {
             topicSelect.appendChild(option);
         });
 
-        // Populate eventtype filter
+        // Populate search eventtype filter (single select)
         const eventtypeSelect = document.getElementById('eventtype-filter');
         data.eventtypes.forEach(eventtype => {
             const option = document.createElement('option');
             option.value = eventtype;
             option.textContent = eventtype;
-            option.selected = true; // Select all by default
             eventtypeSelect.appendChild(option);
+        });
+
+        // Populate chat session filter
+        const chatSessionSelect = document.getElementById('chat-session-filter');
+        data.sessions.forEach(session => {
+            const option = document.createElement('option');
+            option.value = session;
+            option.textContent = session;
+            option.selected = true; // Select all by default
+            chatSessionSelect.appendChild(option);
+        });
+
+        // Populate chat topic filter
+        const chatTopicSelect = document.getElementById('chat-topic-filter');
+        data.topics.forEach(topic => {
+            const option = document.createElement('option');
+            option.value = topic;
+            option.textContent = topic;
+            option.selected = true; // Select all by default
+            chatTopicSelect.appendChild(option);
+        });
+
+        // Populate chat eventtype filter (single select)
+        const chatEventtypeSelect = document.getElementById('chat-eventtype-filter');
+        data.eventtypes.forEach(eventtype => {
+            const option = document.createElement('option');
+            option.value = eventtype;
+            option.textContent = eventtype;
+            chatEventtypeSelect.appendChild(option);
         });
     } catch (error) {
         console.error('Error loading filter options:', error);
@@ -128,7 +156,7 @@ async function searchPapers() {
 
     const sessions = Array.from(sessionSelect.selectedOptions).map(opt => opt.value);
     const topics = Array.from(topicSelect.selectedOptions).map(opt => opt.value);
-    const eventtypes = Array.from(eventtypeSelect.selectedOptions).map(opt => opt.value);
+    const eventtype = eventtypeSelect.value; // Single select
 
     if (!query) {
         showError('Please enter a search query');
@@ -150,10 +178,14 @@ async function searchPapers() {
             limit
         };
 
-        // Add filters if they are selected (send as arrays)
-        if (sessions.length > 0) requestBody.sessions = sessions;
-        if (topics.length > 0) requestBody.topics = topics;
-        if (eventtypes.length > 0) requestBody.eventtypes = eventtypes;
+        // Add filters only if NOT all options are selected (all selected = no filter)
+        if (sessions.length > 0 && sessions.length < sessionSelect.options.length) {
+            requestBody.sessions = sessions;
+        }
+        if (topics.length > 0 && topics.length < topicSelect.options.length) {
+            requestBody.topics = topics;
+        }
+        if (eventtype) requestBody.eventtypes = [eventtype]; // Single value as array
 
         const response = await fetch(`${API_BASE}/api/search`, {
             method: 'POST',
@@ -425,15 +457,35 @@ async function sendChatMessage() {
     try {
         const nPapers = parseInt(document.getElementById('n-papers').value);
 
+        // Get multiple selected values from chat multi-select dropdowns
+        const chatSessionSelect = document.getElementById('chat-session-filter');
+        const chatTopicSelect = document.getElementById('chat-topic-filter');
+        const chatEventtypeSelect = document.getElementById('chat-eventtype-filter');
+
+        const sessions = Array.from(chatSessionSelect.selectedOptions).map(opt => opt.value);
+        const topics = Array.from(chatTopicSelect.selectedOptions).map(opt => opt.value);
+        const eventtype = chatEventtypeSelect.value; // Single select
+
+        const requestBody = {
+            message,
+            n_papers: nPapers
+        };
+
+        // Add filters only if NOT all options are selected (all selected = no filter)
+        if (sessions.length > 0 && sessions.length < chatSessionSelect.options.length) {
+            requestBody.sessions = sessions;
+        }
+        if (topics.length > 0 && topics.length < chatTopicSelect.options.length) {
+            requestBody.topics = topics;
+        }
+        if (eventtype) requestBody.eventtypes = [eventtype]; // Single value as array
+
         const response = await fetch(`${API_BASE}/api/chat`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-                message,
-                n_papers: nPapers
-            })
+            body: JSON.stringify(requestBody)
         });
 
         const data = await response.json();

@@ -6,6 +6,7 @@ and exploring the NeurIPS abstracts database.
 """
 
 import os
+import logging
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify, g
 from flask_cors import CORS
@@ -15,6 +16,8 @@ from neurips_abstracts.embeddings import EmbeddingsManager
 from neurips_abstracts.rag import RAGChat
 from neurips_abstracts.config import get_config
 from neurips_abstracts.paper_utils import get_paper_with_authors, format_search_results, PaperFormattingError
+
+logger = logging.getLogger(__name__)
 
 # Get the directory where this file is located
 PACKAGE_DIR = Path(__file__).parent
@@ -196,7 +199,29 @@ def search():
             # Semantic search using embeddings
             em = get_embeddings_manager()
             database = get_database()
-            results = em.search_similar(query, n_results=limit * 3)  # Get more results to filter
+
+            # Build metadata filter for embeddings search
+            filter_conditions = []
+            if sessions:
+                filter_conditions.append({"session": {"$in": sessions}})
+            if topics:
+                filter_conditions.append({"topic": {"$in": topics}})
+            if eventtypes:
+                filter_conditions.append({"eventtype": {"$in": eventtypes}})
+
+            # Use $or operator if multiple conditions, otherwise use single condition
+            where_filter = None
+            if len(filter_conditions) > 1:
+                where_filter = {"$and": filter_conditions}
+            elif len(filter_conditions) == 1:
+                where_filter = filter_conditions[0]
+
+            logger.info(f"Search filter: sessions={sessions}, topics={topics}, eventtypes={eventtypes}")
+            logger.info(f"Where filter: {where_filter}")
+
+            results = em.search_similar(query, n_results=limit * 2, where=where_filter)  # Get more results to filter
+
+            logger.info(f"Search results count: {len(results.get('ids', [[]])[0]) if results else 0}")
 
             # Transform ChromaDB results to paper format using shared utility
             try:
@@ -205,19 +230,8 @@ def search():
                 # No valid papers found
                 return jsonify({"papers": [], "count": 0, "query": query, "use_embeddings": use_embeddings})
 
-            # Apply filters to semantic search results (support multiple values)
-            if sessions or topics or eventtypes:
-                filtered_papers = []
-                for paper in papers:
-                    # Check if paper matches ANY of the selected values for each filter
-                    if sessions and paper.get("session") not in sessions:
-                        continue
-                    if topics and paper.get("topic") not in topics:
-                        continue
-                    if eventtypes and paper.get("eventtype") not in eventtypes:
-                        continue
-                    filtered_papers.append(paper)
-                papers = filtered_papers[:limit]  # Limit after filtering
+            # Limit results (filtering already done at database level)
+            papers = papers[:limit]
         else:
             # Keyword search in database with multiple filter support
             database = get_database()
@@ -276,6 +290,9 @@ def chat():
     - message: str - User message
     - n_papers: int (optional) - Number of papers for context
     - reset: bool (optional) - Reset conversation
+    - sessions: list (optional) - Filter by sessions
+    - topics: list (optional) - Filter by topics
+    - eventtypes: list (optional) - Filter by event types
 
     Returns
     -------
@@ -289,6 +306,11 @@ def chat():
         n_papers = data.get("n_papers", config.max_context_papers)
         reset = data.get("reset", False)
 
+        # Get filters
+        sessions = data.get("sessions", [])
+        topics = data.get("topics", [])
+        eventtypes = data.get("eventtypes", [])
+
         if not message:
             return jsonify({"error": "Message is required"}), 400
 
@@ -297,8 +319,24 @@ def chat():
         if reset:
             rag.reset_conversation()
 
-        # Get response
-        response = rag.query(message, n_results=n_papers)
+        # Build metadata filter
+        filter_conditions = []
+        if sessions:
+            filter_conditions.append({"session": {"$in": sessions}})
+        if topics:
+            filter_conditions.append({"topic": {"$in": topics}})
+        if eventtypes:
+            filter_conditions.append({"eventtype": {"$in": eventtypes}})
+
+        # Use $or operator if multiple conditions, otherwise use single condition
+        metadata_filter = None
+        if len(filter_conditions) > 1:
+            metadata_filter = {"$or": filter_conditions}
+        elif len(filter_conditions) == 1:
+            metadata_filter = filter_conditions[0]
+
+        # Get response with filters
+        response = rag.query(message, n_results=n_papers, metadata_filter=metadata_filter)
 
         return jsonify(
             {
