@@ -9,7 +9,6 @@ The module uses the text-embedding-qwen3-embedding-4b model via a local LM Studi
 and stores the embeddings in ChromaDB for efficient similarity search.
 """
 
-import json
 import logging
 import sqlite3
 from pathlib import Path

@@ -8,13 +8,12 @@ Tests that require a running LM Studio instance are skipped if it's not availabl
 import json
 import pytest
 import requests
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 from neurips_abstracts.rag import RAGChat, RAGError
 from neurips_abstracts.embeddings import EmbeddingsManager
 from neurips_abstracts.config import get_config
-from tests.test_helpers import check_lm_studio_available, requires_lm_studio
+from tests.test_helpers import requires_lm_studio
 
 # Fixtures imported from conftest.py:
 # - mock_embeddings_manager: Mock embeddings manager with predefined search results
@@ -189,7 +188,7 @@ class TestRAGChatQuery:
         """Test query with custom n_results."""
         chat = RAGChat(mock_embeddings_manager, mock_database)
 
-        result = chat.query("What is deep learning?", n_results=2)
+        chat.query("What is deep learning?", n_results=2)
 
         # Check that n_results was passed
         call_args = mock_embeddings_manager.search_similar.call_args
@@ -200,7 +199,7 @@ class TestRAGChatQuery:
         chat = RAGChat(mock_embeddings_manager, mock_database)
 
         metadata_filter = {"decision": "Accept (oral)"}
-        result = chat.query("What are oral presentations?", metadata_filter=metadata_filter)
+        chat.query("What are oral presentations?", metadata_filter=metadata_filter)
 
         # Check that filter was passed
         call_args = mock_embeddings_manager.search_similar.call_args
@@ -211,7 +210,7 @@ class TestRAGChatQuery:
         chat = RAGChat(mock_embeddings_manager, mock_database)
         custom_prompt = "You are a helpful assistant specializing in machine learning."
 
-        result = chat.query("Explain transformers", system_prompt=custom_prompt)
+        chat.query("Explain transformers", system_prompt=custom_prompt)
 
         # Check that the custom prompt was used in the API call
         call_args = mock_lm_studio_response.call_args
@@ -306,7 +305,7 @@ class TestRAGChatChat:
         """Test chat with custom n_results."""
         chat = RAGChat(mock_embeddings_manager, mock_database)
 
-        result = chat.chat("What is AI?", n_results=7)
+        chat.chat("What is AI?", n_results=7)
 
         call_args = mock_embeddings_manager.search_similar.call_args
         assert call_args[1]["n_results"] == 7

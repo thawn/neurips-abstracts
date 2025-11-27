@@ -7,10 +7,8 @@ old field names) have been removed. See test_authors.py for comprehensive tests
 using the new schema with integer IDs and proper author relationships.
 """
 
-import json
 import pytest
 import sqlite3
-from pathlib import Path
 
 from neurips_abstracts.database import DatabaseManager, DatabaseError
 

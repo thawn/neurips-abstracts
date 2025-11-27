@@ -97,7 +97,6 @@ def test_db(tmp_path):
                 "Accept (oral)",
             ),
         )
-        paper1_id = cursor.lastrowid
 
         # Paper 2
         cursor.execute(
@@ -112,7 +111,6 @@ def test_db(tmp_path):
                 "Accept (poster)",
             ),
         )
-        paper2_id = cursor.lastrowid
 
         # Paper 3
         cursor.execute(
@@ -127,7 +125,6 @@ def test_db(tmp_path):
                 "Accept (oral)",
             ),
         )
-        paper3_id = cursor.lastrowid
 
         # Add authors (using fullname as per actual schema)
         cursor.execute("INSERT INTO authors (fullname) VALUES (?)", ("Ashish Vaswani",))

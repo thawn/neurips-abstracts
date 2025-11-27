@@ -4,11 +4,7 @@ Tests for configuration module.
 This module tests the configuration loading and management functionality.
 """
 
-import os
-import tempfile
-from pathlib import Path
 
-import pytest
 
 from neurips_abstracts.config import Config, get_config, load_env_file
 

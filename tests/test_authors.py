@@ -3,10 +3,8 @@ Tests for authors table functionality.
 """
 
 import pytest
-import sqlite3
-from pathlib import Path
 
-from neurips_abstracts.database import DatabaseManager, DatabaseError
+from neurips_abstracts.database import DatabaseManager
 
 # Fixtures are now imported from conftest.py:
 # - sample_neurips_data: Sample NeurIPS data with authors table structure

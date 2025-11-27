@@ -227,7 +227,7 @@ web = [
 
 Install with:
 ```bash
-pip install -e ".[web]"
+pip install -e "."
 ```
 
 ## Usage

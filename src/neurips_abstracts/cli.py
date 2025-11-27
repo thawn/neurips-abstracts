@@ -8,7 +8,6 @@ including downloading data, creating databases, and generating embeddings.
 import argparse
 import sys
 from pathlib import Path
-from typing import Optional
 
 from tqdm import tqdm
 
@@ -47,7 +46,7 @@ def create_embeddings_command(args: argparse.Namespace) -> int:
     # Validate database exists
     if not db_path.exists():
         print(f"❌ Error: Database file not found: {db_path}", file=sys.stderr)
-        print(f"\nYou can create a database using:", file=sys.stderr)
+        print("\nYou can create a database using:", file=sys.stderr)
         print(f"  neurips-abstracts download --output {db_path}", file=sys.stderr)
         return 1
 
@@ -73,7 +72,7 @@ def create_embeddings_command(args: argparse.Namespace) -> int:
 
     # Initialize embeddings manager
     try:
-        print(f"\n🔧 Initializing embeddings manager...")
+        print("\n🔧 Initializing embeddings manager...")
         em = EmbeddingsManager(
             lm_studio_url=args.lm_studio_url,
             model_name=args.model,
@@ -82,7 +81,7 @@ def create_embeddings_command(args: argparse.Namespace) -> int:
         )
 
         # Test connection
-        print(f"🔌 Testing LM Studio connection...")
+        print("🔌 Testing LM Studio connection...")
         if not em.test_lm_studio_connection():
             print("\n❌ Failed to connect to LM Studio!", file=sys.stderr)
             print("\nPlease ensure:", file=sys.stderr)
@@ -130,7 +129,7 @@ def create_embeddings_command(args: argparse.Namespace) -> int:
 
         # Show collection stats
         stats = em.get_collection_stats()
-        print(f"\n📊 Collection Statistics:")
+        print("\n📊 Collection Statistics:")
         print(f"   Name:  {stats['name']}")
         print(f"   Count: {stats['count']:,} documents")
 
@@ -179,8 +178,8 @@ def search_command(args: argparse.Namespace) -> int:
     # Validate embeddings database exists
     if not embeddings_path.exists():
         print(f"❌ Error: Embeddings database not found: {embeddings_path}", file=sys.stderr)
-        print(f"\nYou can create embeddings using:", file=sys.stderr)
-        print(f"  neurips-abstracts create-embeddings --db-path <database.db>", file=sys.stderr)
+        print("\nYou can create embeddings using:", file=sys.stderr)
+        print("  neurips-abstracts create-embeddings --db-path <database.db>", file=sys.stderr)
         return 1
 
     print("NeurIPS Semantic Search")
@@ -369,7 +368,7 @@ def chat_command(args: argparse.Namespace) -> int:
             print("\n❌ Failed to connect to LM Studio!", file=sys.stderr)
             print("\nPlease ensure:", file=sys.stderr)
             print(f"  - LM Studio is running at {args.lm_studio_url}", file=sys.stderr)
-            print(f"  - A language model is loaded", file=sys.stderr)
+            print("  - A language model is loaded", file=sys.stderr)
             return 1
         print("✅ Successfully connected to LM Studio")
 
@@ -535,7 +534,7 @@ def web_ui_command(args: argparse.Namespace) -> int:
         # Try to import Flask - if it fails, give helpful error
         try:
             from neurips_abstracts.web_ui import run_server
-        except ImportError as e:
+        except ImportError:
             print("\n❌ Web UI dependencies not installed!", file=sys.stderr)
             print("\nThe web UI requires Flask. Install it with:", file=sys.stderr)
             print("  pip install neurips-abstracts[web]", file=sys.stderr)

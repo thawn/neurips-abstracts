@@ -4,8 +4,7 @@ Tests for the downloader module.
 
 import json
 import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, mock_open
+from unittest.mock import Mock, patch
 import requests
 
 from neurips_abstracts.downloader import download_json, download_neurips_data, DownloadError

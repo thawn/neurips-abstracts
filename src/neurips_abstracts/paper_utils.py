@@ -6,7 +6,7 @@ This module provides shared utilities for formatting papers from various sources
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,7 @@ def format_search_results(
             # Convert paper_id to integer (ChromaDB stores as string)
             try:
                 paper_id_int = int(paper_id)
-            except (ValueError, TypeError) as e:
+            except (ValueError, TypeError):
                 logger.warning(f"Invalid paper_id format: {paper_id} ({type(paper_id)})")
                 continue
 

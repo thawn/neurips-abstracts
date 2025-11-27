@@ -5,7 +5,7 @@ Tests the shared utilities for formatting papers from various sources.
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 from neurips_abstracts.paper_utils import (
     get_paper_with_authors,

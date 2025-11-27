@@ -9,7 +9,7 @@ import pytest
 from pathlib import Path
 import chromadb
 from neurips_abstracts.config import Config
-from neurips_abstracts.embeddings import EmbeddingsManager, EmbeddingsError
+from neurips_abstracts.embeddings import EmbeddingsManager
 
 
 @pytest.fixture

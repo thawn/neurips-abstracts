@@ -2,13 +2,11 @@
 Tests for the embeddings module.
 """
 
-import json
 import pytest
 import sqlite3
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 
-from neurips_abstracts.embeddings import EmbeddingsManager, EmbeddingsError
+from neurips_abstracts.embeddings import EmbeddingsError
 
 # Fixtures imported from conftest.py:
 # - mock_lm_studio: Mock LM Studio API responses

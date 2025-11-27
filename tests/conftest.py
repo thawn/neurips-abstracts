@@ -7,7 +7,6 @@ code duplication and ensure consistency in test setup.
 
 import pytest
 import sqlite3
-from pathlib import Path
 from unittest.mock import Mock
 
 from neurips_abstracts.database import DatabaseManager

@@ -7,13 +7,10 @@ including the download and create-embeddings commands.
 
 import sqlite3
 import sys
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import pytest
 from neurips_abstracts.cli import (
     main,
-    create_embeddings_command,
-    download_command,
     search_command,
 )
 
@@ -897,14 +894,13 @@ class TestWebUICommand:
         # Mock the import at the location where it happens (inside web_ui_command)
         with patch.dict("sys.modules", {"neurips_abstracts.web_ui": None}):
             # Make importing web_ui raise ImportError
-            import sys
 
             def mock_import(name, *args, **kwargs):
                 if name == "neurips_abstracts.web_ui":
                     raise ImportError("No module named 'flask'")
                 return __import__(name, *args, **kwargs)
 
-            with patch("builtins.__import__", wraps=mock_import) as mock:
+            with patch("builtins.__import__", wraps=mock_import):
                 exit_code = web_ui_command(args)
 
         assert exit_code == 1
@@ -974,7 +970,6 @@ class TestCLISearchErrorHandling:
 
     def test_search_command_where_parse_warning(self, tmp_path, capsys):
         """Test warning when where clause cannot be parsed (lines 229-230)."""
-        from neurips_abstracts.cli import search_command
         import argparse
 
         embeddings_path = tmp_path / "chroma_db"
@@ -1012,7 +1007,6 @@ class TestCLISearchErrorHandling:
 
     def test_search_command_general_exception(self, tmp_path, capsys):
         """Test general exception handling in search (lines 308-309)."""
-        from neurips_abstracts.cli import search_command
         import argparse
 
         embeddings_path = tmp_path / "chroma_db"
@@ -1047,7 +1041,6 @@ class TestCLIEmbeddingsProgressAndStats:
     def test_create_embeddings_success_displays_stats(self, tmp_path, capsys):
         """Test that successful embedding displays stats (lines 131-136, 147-152)."""
         from neurips_abstracts.cli import main
-        import argparse
 
         db_path = tmp_path / "test.db"
 
@@ -1070,7 +1063,6 @@ class TestCLIEmbeddingsProgressAndStats:
             mock_em.collection_exists.return_value = False
 
             # Mock embed_from_database to simulate progress callbacks
-            progress_callback = None
 
             def mock_embed(db_path, batch_size, where_clause, progress_callback):
                 # Simulate calling progress callback
@@ -1136,8 +1128,7 @@ class TestCLIChatInteractiveLoop:
             mock_em.create_collection.return_value = None
             mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
 
-            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
-                mock_rag = MockRAG.return_value
+            with patch("neurips_abstracts.cli.RAGChat"):
 
                 # Simulate: empty input, then exit
                 with patch("builtins.input", side_effect=["", "   ", "exit"]):
@@ -1171,7 +1162,7 @@ class TestCLIChatInteractiveLoop:
             mock_em.create_collection.return_value = None
             mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
 
-            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+            with patch("neurips_abstracts.cli.RAGChat"):
                 # Test 'quit' command
                 with patch("builtins.input", side_effect=["quit"]):
                     exit_code = chat_command(args)
@@ -1205,7 +1196,7 @@ class TestCLIChatInteractiveLoop:
             mock_em.create_collection.return_value = None
             mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
 
-            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+            with patch("neurips_abstracts.cli.RAGChat"):
                 # Test 'q' command
                 with patch("builtins.input", side_effect=["q"]):
                     exit_code = chat_command(args)
@@ -1276,7 +1267,7 @@ class TestCLIChatInteractiveLoop:
             mock_em.create_collection.return_value = None
             mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
 
-            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+            with patch("neurips_abstracts.cli.RAGChat"):
                 # Test help then exit
                 with patch("builtins.input", side_effect=["help", "exit"]):
                     exit_code = chat_command(args)
@@ -1398,7 +1389,7 @@ class TestCLIChatInteractiveLoop:
             mock_em.create_collection.return_value = None
             mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
 
-            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+            with patch("neurips_abstracts.cli.RAGChat"):
                 # Simulate Ctrl+C
                 with patch("builtins.input", side_effect=KeyboardInterrupt()):
                     exit_code = chat_command(args)
@@ -1432,7 +1423,7 @@ class TestCLIChatInteractiveLoop:
             mock_em.create_collection.return_value = None
             mock_em.get_collection_stats.return_value = {"name": "test_collection", "count": 100}
 
-            with patch("neurips_abstracts.cli.RAGChat") as MockRAG:
+            with patch("neurips_abstracts.cli.RAGChat"):
                 # Simulate EOF
                 with patch("builtins.input", side_effect=EOFError()):
                     exit_code = chat_command(args)

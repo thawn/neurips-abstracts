@@ -5,9 +5,7 @@ These tests specifically target uncovered lines in the web UI application.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-import sys
-from pathlib import Path
+from unittest.mock import Mock, patch
 
 
 class TestWebUISemanticSearchDetails:
@@ -351,7 +349,6 @@ class TestWebUIDatabaseNotFound:
     def test_get_database_file_not_found(self):
         """Test that get_database raises FileNotFoundError when database doesn't exist."""
         from neurips_abstracts.web_ui.app import app
-        import os
 
         with app.test_client() as client:
             # Patch os.path.exists to return False for the database path

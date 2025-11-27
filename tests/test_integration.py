@@ -6,9 +6,7 @@ and proper author relationships. Tests using the old schema have been removed.
 See test_authors.py for comprehensive tests of the new schema.
 """
 
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from neurips_abstracts import download_json, DatabaseManager
 from neurips_abstracts.downloader import download_neurips_data

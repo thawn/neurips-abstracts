@@ -12,14 +12,12 @@ import requests
 import threading
 from pathlib import Path
 from multiprocessing import Process
-import socket
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from neurips_abstracts.database import DatabaseManager
-from neurips_abstracts.config import Config, get_config
-from tests.test_helpers import check_lm_studio_available, requires_lm_studio, find_free_port
+from tests.test_helpers import requires_lm_studio, find_free_port
 
 # Helper functions imported from test_helpers:
 # - check_lm_studio_available(): Check if LM Studio is running
@@ -113,7 +111,6 @@ def start_web_server(db_path, port):
         Port to run the server on
     """
     import os
-    import sys
 
     # Set environment variable for database path
     os.environ["PAPER_DB_PATH"] = str(db_path)
@@ -142,7 +139,10 @@ def web_server(test_database):
     """
     # Check if Flask is installed
     try:
-        import flask
+        import importlib.util
+
+        if importlib.util.find_spec("flask") is None:
+            pytest.skip("Flask not installed - web UI tests require 'pip install neurips-abstracts[web]'")
     except ImportError:
         pytest.skip("Flask not installed - web UI tests require 'pip install neurips-abstracts[web]'")
 
@@ -325,7 +325,7 @@ class TestWebUIIntegration:
             try:
                 response = requests.get(f"{base_url}/api/stats", timeout=5)
                 results.append(response.status_code)
-            except Exception as e:
+            except Exception:
                 results.append(None)
 
         # Make 5 concurrent requests
@@ -630,7 +630,6 @@ class TestWebUICommand:
 
         # Test that calling with web-ui shows help or runs
         # We can't actually run it here, but we can check it's registered
-        import argparse
 
         # This should not raise an error
         assert callable(main)

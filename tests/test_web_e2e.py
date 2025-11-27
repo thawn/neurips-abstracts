@@ -11,7 +11,6 @@ import threading
 import sys
 import os
 from pathlib import Path
-from multiprocessing import Process
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
@@ -25,6 +24,9 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 from webdriver_manager.core.os_manager import ChromeType
+from neurips_abstracts.database import DatabaseManager
+from neurips_abstracts.config import Config, get_config
+from tests.test_helpers import find_free_port
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -41,10 +43,6 @@ _driver_cache = {
     "chrome_available": None,
     "firefox_available": None,
 }
-
-from neurips_abstracts.database import DatabaseManager
-from neurips_abstracts.config import Config, get_config
-from tests.test_helpers import find_free_port
 
 
 @pytest.fixture(scope="module")
@@ -746,7 +744,7 @@ class TestWebUIE2E:
         # Check that results area exists
         # Note: Fuzzy search may still return results for nonsense queries
         # Just verify search executed without error
-        results = browser.find_elements(By.CSS_SELECTOR, "#search-results .bg-white.rounded-lg")
+        browser.find_elements(By.CSS_SELECTOR, "#search-results .bg-white.rounded-lg")
         # Results may vary - just ensure search didn't crash
         search_results_element = browser.find_element(By.ID, "search-results")
         assert search_results_element is not None
@@ -970,7 +968,7 @@ class TestWebUIE2E:
         if len(reset_buttons) > 0:
             # Get initial message count
             initial_messages = browser.find_elements(By.CSS_SELECTOR, ".chat-message")
-            initial_count = len(initial_messages)
+            len(initial_messages)
 
             # Click reset button
             reset_buttons[0].click()

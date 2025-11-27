@@ -504,7 +504,7 @@ class DatabaseManager:
                         )
 
                     inserted_count += 1
-                except sqlite3.IntegrityError as e:
+                except sqlite3.IntegrityError:
                     logger.warning(f"Skipping duplicate record: {paper_id}")
                     continue
 

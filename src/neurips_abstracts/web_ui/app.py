@@ -226,7 +226,7 @@ def search():
             # Transform ChromaDB results to paper format using shared utility
             try:
                 papers = format_search_results(results, database, include_documents=False)
-            except PaperFormattingError as e:
+            except PaperFormattingError:
                 # No valid papers found
                 return jsonify({"papers": [], "count": 0, "query": query, "use_embeddings": use_embeddings})
 
@@ -411,11 +411,11 @@ def run_server(host="127.0.0.1", port=5000, debug=False):
         Enable debug mode (default: False)
     """
     config = get_config()  # Get config lazily
-    print(f"Starting NeurIPS Abstracts Web Interface...")
+    print("Starting NeurIPS Abstracts Web Interface...")
     print(f"Database: {config.paper_db_path}")
     print(f"Embeddings: {config.embedding_db_path}")
     print(f"Server: http://{host}:{port}")
-    print(f"\nPress CTRL+C to stop the server")
+    print("\nPress CTRL+C to stop the server")
 
     app.run(host=host, port=port, debug=debug)
 
