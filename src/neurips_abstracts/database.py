@@ -636,7 +636,7 @@ class DatabaseManager:
         ... )
         """
         conditions = []
-        parameters = []
+        parameters: List[Any] = []
 
         if keyword:
             conditions.append("(name LIKE ? OR abstract LIKE ? OR topic LIKE ? OR keywords LIKE ?)")
@@ -786,7 +786,7 @@ class DatabaseManager:
         >>> authors = db.search_authors(institution="Stanford")
         """
         conditions = []
-        parameters = []
+        parameters: List[Any] = []
 
         if name:
             conditions.append("fullname LIKE ?")

@@ -438,9 +438,19 @@ class TestRAGChatIntegration:
             },
         )
 
+        # Create database with test data
+        from neurips_abstracts.database import DatabaseManager
+
+        db_path = tmp_path / "test.db"
+        db = DatabaseManager(str(db_path))
+        db.connect()
+        db.create_tables()
+        db.close()
+
         # Create RAG chat with configured settings
         chat = RAGChat(
             em,
+            db,
             lm_studio_url=config.llm_backend_url,
             model=config.chat_model,
         )
@@ -481,8 +491,18 @@ class TestRAGChatIntegration:
             },
         )
 
+        # Create database with test data
+        from neurips_abstracts.database import DatabaseManager
+
+        db_path = tmp_path / "test.db"
+        db = DatabaseManager(str(db_path))
+        db.connect()
+        db.create_tables()
+        db.close()
+
         chat = RAGChat(
             em,
+            db,
             lm_studio_url=config.llm_backend_url,
             model=config.chat_model,
         )
@@ -524,8 +544,18 @@ class TestRAGChatIntegration:
             },
         )
 
+        # Create database with test data
+        from neurips_abstracts.database import DatabaseManager
+
+        db_path = tmp_path / "test.db"
+        db = DatabaseManager(str(db_path))
+        db.connect()
+        db.create_tables()
+        db.close()
+
         chat = RAGChat(
             em,
+            db,
             lm_studio_url=config.llm_backend_url,
             model=config.chat_model,
         )

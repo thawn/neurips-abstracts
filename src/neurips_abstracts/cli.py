@@ -115,8 +115,10 @@ def create_embeddings_command(args: argparse.Namespace) -> int:
         # Create progress bar
         with tqdm(total=total_count, desc="Embedding papers", unit="papers") as pbar:
 
-            def update_progress(n):
-                pbar.update(n)
+            def update_progress(current: int, total: int) -> None:
+                pbar.n = current
+                pbar.total = total
+                pbar.refresh()
 
             embedded_count = em.embed_from_database(
                 db_path=db_path,
@@ -356,10 +358,10 @@ def chat_command(args: argparse.Namespace) -> int:
 
         # Initialize embeddings manager
         em = EmbeddingsManager(
-            db_path=embeddings_path,
+            chroma_path=embeddings_path,
             collection_name=args.collection,
             lm_studio_url=args.lm_studio_url,
-            model=args.model,
+            model_name=args.model,
         )
 
         # Test LM Studio connection
@@ -379,9 +381,18 @@ def chat_command(args: argparse.Namespace) -> int:
         stats = em.get_collection_stats()
         print(f"\n📊 Loaded {stats['count']:,} papers from collection '{stats['name']}'")
 
+        # Initialize database connection
+        from neurips_abstracts.database import DatabaseManager
+        from neurips_abstracts.config import get_config
+
+        config_obj = get_config()
+        db = DatabaseManager(config_obj.paper_db_path)
+        db.connect()
+
         # Initialize RAG chat
         chat = RAGChat(
             embeddings_manager=em,
+            database=db,
             lm_studio_url=args.lm_studio_url,
             model=args.model,
             max_context_papers=args.max_context,
@@ -449,6 +460,7 @@ def chat_command(args: argparse.Namespace) -> int:
             chat.export_conversation(export_path)
             print(f"💾 Conversation exported to: {export_path}")
 
+        db.close()
         em.close()
         return 0
 

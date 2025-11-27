@@ -12,7 +12,7 @@ and stores the embeddings in ChromaDB for efficient similarity search.
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, Tuple
+from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 
 import requests
 import chromadb
@@ -104,8 +104,8 @@ class EmbeddingsManager:
         self.model_name = model_name or config.embedding_model
         self.chroma_path = Path(chroma_path or config.embedding_db_path)
         self.collection_name = collection_name or config.collection_name
-        self.client: Optional[chromadb.Client] = None
-        self.collection: Optional[chromadb.Collection] = None
+        self.client: Optional[Any] = None  # chromadb.Client
+        self.collection: Optional[Any] = None  # chromadb.Collection
 
     def connect(self) -> None:
         """
@@ -335,7 +335,7 @@ class EmbeddingsManager:
         self,
         papers: List[Tuple[Union[int, str], str, Dict[str, Any]]],
         batch_size: int = 100,
-        progress_callback: Optional[callable] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> None:
         """
         Add multiple papers to the vector database in batches.
@@ -415,7 +415,7 @@ class EmbeddingsManager:
 
                     # Call progress callback if provided
                     if progress_callback:
-                        progress_callback(len(batch_ids))
+                        progress_callback(i + len(batch_ids), total)
 
                 except Exception as e:
                     logger.error(f"Failed to add batch: {str(e)}")
@@ -475,7 +475,7 @@ class EmbeddingsManager:
             )
 
             logger.info(f"Found {len(results['ids'][0])} similar papers")
-            return results
+            return dict(results)  # type: ignore[arg-type]
 
         except Exception as e:
             raise EmbeddingsError(f"Failed to search: {str(e)}") from e
@@ -519,7 +519,7 @@ class EmbeddingsManager:
         db_path: Union[str, Path],
         batch_size: int = 100,
         where_clause: Optional[str] = None,
-        progress_callback: Optional[callable] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> int:
         """
         Embed papers from a SQLite database.

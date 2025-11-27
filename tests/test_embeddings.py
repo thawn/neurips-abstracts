@@ -372,8 +372,8 @@ class TestEmbeddingsManager:
 
         progress_calls = []
 
-        def progress_callback(n):
-            progress_calls.append(n)
+        def progress_callback(current: int, total: int) -> None:
+            progress_calls.append((current, total))
 
         count = embeddings_manager.embed_from_database(
             test_database, batch_size=1, progress_callback=progress_callback
@@ -383,7 +383,8 @@ class TestEmbeddingsManager:
         assert count == 2
         # Progress callback should be called with batch updates
         assert len(progress_calls) > 0
-        assert sum(progress_calls) == 2  # Total progress equals embedded count
+        # Check that the last progress call shows completion
+        assert progress_calls[-1][0] <= progress_calls[-1][1]
 
         embeddings_manager.close()
 

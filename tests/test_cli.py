@@ -1065,11 +1065,11 @@ class TestCLIEmbeddingsProgressAndStats:
             # Mock embed_from_database to simulate progress callbacks
 
             def mock_embed(db_path, batch_size, where_clause, progress_callback):
-                # Simulate calling progress callback
+                # Simulate calling progress callback with (current, total) arguments
                 if progress_callback:
-                    progress_callback(1)
-                    progress_callback(1)
-                    progress_callback(1)
+                    progress_callback(1, 3)
+                    progress_callback(2, 3)
+                    progress_callback(3, 3)
                 return 3
 
             mock_em.embed_from_database.side_effect = mock_embed
