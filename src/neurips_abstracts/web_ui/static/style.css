@@ -31,6 +31,22 @@ select:focus {
     font-size: 0.9em;
 }
 
+/* Star rating styles */
+.fa-star {
+    transition: color 0.15s ease, transform 0.1s ease;
+    color: #FBBF24;
+    /* Default yellow color */
+}
+
+.fa-star:hover {
+    transform: scale(1.15);
+    /* Yellow color on hover */
+}
+
+.fa-star:active {
+    transform: scale(0.95);
+    /* Yellow color on click */
+}
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .container {

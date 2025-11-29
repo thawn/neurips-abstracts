@@ -265,7 +265,7 @@ class RAGChat:
                 "You are an AI assistant helping researchers find relevant NeurIPS abstracts. "
                 "Use the provided paper abstracts to answer questions accurately and concisely. "
                 "If the papers don't contain enough information to answer the question, suggest a query that might return more relevant results. "
-                "Always cite which papers you're referencing (e.g., 'Paper 1', 'Paper 2'), using local links: #paper-1, #paper-2 etc."
+                "Always cite which papers you're referencing (e.g., 'Paper 1', 'Paper 2'), using local links: <a href='#paper-1'>Paper-1</a>, <a href='#paper-2'>Paper-2</a> etc."
             )
 
         # Build messages
@@ -293,7 +293,7 @@ class RAGChat:
                     "temperature": self.temperature,
                     "max_tokens": 1000,
                 },
-                timeout=60,
+                timeout=180,
             )
             response.raise_for_status()
             data = response.json()

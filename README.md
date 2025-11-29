@@ -543,18 +543,15 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## Changelog
-
-### 0.1.0 (2025-11-25)
-
-- Initial release
-- Download JSON data from URLs
-- Load data into SQLite database
-- Search and query functionality
-- Comprehensive test suite
-- Full documentation
-
 ## Support
 
 For issues, questions, or contributions, please visit:
 https://github.com/yourusername/neurips-abstracts/issues
+
+## ToDo
+
+- improve the rag 
+  - add query rewriting
+  - only do retrieval for follow up question if the rewritten query is above a semantic distance threshold
+- the details view doubles the content of the beginning of the abstract.
+- render latex formulae

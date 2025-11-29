@@ -7,9 +7,14 @@ and exploring the NeurIPS abstracts database.
 
 import os
 import logging
+import tempfile
+import shutil
+import zipfile
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, g
+from io import BytesIO
+from flask import Flask, render_template, request, jsonify, g, send_file
 from flask_cors import CORS
+import requests
 
 from neurips_abstracts.database import DatabaseManager
 from neurips_abstracts.embeddings import EmbeddingsManager
@@ -283,6 +288,45 @@ def get_paper(paper_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/papers/batch", methods=["POST"])
+def get_papers_batch():
+    """
+    Get multiple papers by their IDs.
+
+    Parameters
+    ----------
+    paper_ids : list of int
+        List of paper IDs to fetch
+
+    Returns
+    -------
+    dict
+        Dictionary with 'papers' key containing list of paper details
+    """
+    try:
+        data = request.json
+        paper_ids = data.get("paper_ids", [])
+
+        if not paper_ids:
+            return jsonify({"error": "No paper IDs provided"}), 400
+
+        database = get_database()
+        papers = []
+
+        for paper_id in paper_ids:
+            try:
+                paper = get_paper_with_authors(database, paper_id)
+                papers.append(paper)
+            except PaperFormattingError as e:
+                logger.warning(f"Paper {paper_id} not found: {e}")
+                continue
+
+        return jsonify({"papers": papers})
+    except Exception as e:
+        logger.error(f"Error fetching papers batch: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/chat", methods=["POST"])
 def chat():
     """
@@ -385,6 +429,299 @@ def get_years():
         return jsonify({"years": years})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/export/interesting-papers", methods=["POST"])
+def export_interesting_papers():
+    """
+    Export interesting papers to markdown with optional PDF and image downloads.
+
+    Parameters
+    ----------
+    paper_ids : list of int
+        List of paper IDs to export
+    priorities : dict
+        Dictionary mapping paper IDs to priority ratings (1-5)
+    search_query : str, optional
+        Search query context
+    download_assets : bool, optional
+        Whether to download PDFs and images (default: True)
+
+    Returns
+    -------
+    file
+        Zip file containing markdown and downloaded assets
+    """
+    try:
+        data = request.json
+        paper_ids = data.get("paper_ids", [])
+        priorities = data.get("priorities", {})
+        search_query = data.get("search_query", "")
+        download_assets = data.get("download_assets", True)
+
+        if not paper_ids:
+            return jsonify({"error": "No paper IDs provided"}), 400
+
+        # Fetch papers from database
+        database = get_database()
+        papers = []
+        for paper_id in paper_ids:
+            try:
+                paper = get_paper_with_authors(database, paper_id)
+                priority_data = priorities.get(str(paper_id), {})
+
+                # Handle both old format (int) and new format (dict with priority and searchTerm)
+                if isinstance(priority_data, dict):
+                    paper["priority"] = priority_data.get("priority", 0)
+                    paper["searchTerm"] = priority_data.get("searchTerm", "Unknown")
+                else:
+                    # Backward compatibility: old format was just an integer
+                    paper["priority"] = priority_data
+                    paper["searchTerm"] = search_query or "Unknown"
+
+                papers.append(paper)
+            except PaperFormattingError:
+                logger.warning(f"Paper {paper_id} not found")
+                continue
+
+        if not papers:
+            return jsonify({"error": "No papers found"}), 404
+
+        # Sort papers by session, search term, priority, and poster position
+        papers.sort(
+            key=lambda p: (
+                p.get("session") or "",
+                p.get("searchTerm") or "",
+                -p.get("priority", 0),  # Descending priority
+                p.get("poster_position") or "",
+            )
+        )
+
+        # Create temporary directory for files
+        temp_dir = tempfile.mkdtemp()
+        assets_dir = Path(temp_dir) / "assets"
+        assets_dir.mkdir(exist_ok=True)
+
+        try:
+            # Generate markdown with asset links
+            markdown = generate_markdown_with_assets(papers, search_query, assets_dir if download_assets else None)
+
+            # If not downloading assets, just return the markdown file
+            if not download_assets:
+                # Clean up temp directory
+                shutil.rmtree(temp_dir)
+
+                # Return markdown directly
+                markdown_buffer = BytesIO(markdown.encode("utf-8"))
+                markdown_buffer.seek(0)
+
+                return send_file(
+                    markdown_buffer,
+                    mimetype="text/markdown",
+                    as_attachment=True,
+                    download_name=f'interesting-papers-{papers[0].get("year", "2025")}.md',
+                )
+
+            # Write markdown file
+            markdown_path = Path(temp_dir) / "interesting-papers.md"
+            with open(markdown_path, "w", encoding="utf-8") as f:
+                f.write(markdown)
+
+            # Create zip file
+            zip_buffer = BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                # Add markdown
+                zip_file.write(markdown_path, "interesting-papers.md")
+
+                # Add assets if they were downloaded
+                if download_assets and assets_dir.exists():
+                    for asset_file in assets_dir.glob("*"):
+                        zip_file.write(asset_file, f"assets/{asset_file.name}")
+
+            zip_buffer.seek(0)
+
+            # Clean up temp directory
+            shutil.rmtree(temp_dir)
+
+            return send_file(
+                zip_buffer,
+                mimetype="application/zip",
+                as_attachment=True,
+                download_name=f'interesting-papers-{papers[0].get("year", "2025")}.zip',
+            )
+
+        except Exception as e:
+            # Clean up on error
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            raise
+
+    except Exception as e:
+        logger.error(f"Error exporting interesting papers: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+def generate_markdown_with_assets(papers, search_query, assets_dir):
+    """
+    Generate markdown content with links to downloaded assets.
+
+    Parameters
+    ----------
+    papers : list
+        List of paper dictionaries
+    search_query : str
+        Search query context
+    assets_dir : Path or None
+        Directory to download assets to, or None to skip downloads
+
+    Returns
+    -------
+    str
+        Markdown content
+    """
+    from datetime import datetime
+
+    markdown = "# Interesting Papers from NeurIPS 2025\n\n"
+    markdown += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    markdown += f"**Total Papers:** {len(papers)}\n\n"
+    markdown += "---\n\n"
+
+    # Group by session, then by search term
+    sessions = {}
+    for paper in papers:
+        session = paper.get("session") or "No Session"
+        if session not in sessions:
+            sessions[session] = {}
+
+        search_term = paper.get("searchTerm") or "Unknown"
+        if search_term not in sessions[session]:
+            sessions[session][search_term] = []
+        sessions[session][search_term].append(paper)
+
+    # Write each session and its search terms
+    for session, search_terms in sessions.items():
+        markdown += f"## {session}\n\n"
+
+        for search_term, term_papers in search_terms.items():
+            markdown += f"### {search_term}\n\n"
+
+            for paper in term_papers:
+                stars = "⭐" * paper.get("priority", 0)
+                markdown += f"#### {paper.get('name', 'Untitled')}\n\n"
+                markdown += f"**Rating:** {stars} ({paper.get('priority', 0)}/5)\n\n"
+
+                if paper.get("authors"):
+                    authors = ", ".join(paper["authors"]) if isinstance(paper["authors"], list) else paper["authors"]
+                    markdown += f"**Authors:** {authors}\n\n"
+
+                if paper.get("poster_position"):
+                    markdown += f"**Poster:** {paper['poster_position']}\n\n"
+
+                # Download and link PDF if available
+                # Try paper_pdf_url first, then construct from paper_url
+                pdf_url = paper.get("paper_pdf_url")
+                if not pdf_url and paper.get("paper_url"):
+                    # Convert forum URL to PDF URL by replacing 'forum' with 'pdf'
+                    pdf_url = paper["paper_url"].replace("/forum?id=", "/pdf?id=")
+
+                if pdf_url and assets_dir:
+                    pdf_filename = download_file(pdf_url, assets_dir, f"paper_{paper['id']}.pdf")
+                    if pdf_filename:
+                        markdown += f"**PDF:** [Download](assets/{pdf_filename})\n\n"
+                elif pdf_url:
+                    markdown += f"**PDF URL:** {pdf_url}\n\n"
+
+                if paper.get("paper_url"):
+                    markdown += f"**Paper URL:** {paper['paper_url']}\n\n"
+
+                if paper.get("url"):
+                    markdown += f"**Source URL:** {paper['url']}\n\n"
+
+                # Download poster image if available (from eventmedia)
+                if paper.get("eventmedia") and assets_dir:
+                    # eventmedia might contain image URLs - try to extract and download
+                    poster_filename = download_poster_image(paper["eventmedia"], assets_dir, f"poster_{paper['id']}")
+                    if poster_filename:
+                        markdown += f"**Poster Image:** ![Poster](assets/{poster_filename})\n\n"
+
+                if paper.get("abstract"):
+                    markdown += f"**Abstract:**\n\n{paper['abstract']}\n\n"
+
+                markdown += "---\n\n"
+
+    return markdown
+
+
+def download_file(url, target_dir, filename):
+    """
+    Download a file from URL to target directory.
+
+    Parameters
+    ----------
+    url : str
+        URL to download from
+    target_dir : Path
+        Directory to save file to
+    filename : str
+        Name for the downloaded file
+
+    Returns
+    -------
+    str or None
+        Filename if successful, None otherwise
+    """
+    try:
+        response = requests.get(url, timeout=30, stream=True)
+        response.raise_for_status()
+
+        file_path = target_dir / filename
+        with open(file_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+        logger.info(f"Downloaded: {filename}")
+        return filename
+    except Exception as e:
+        logger.warning(f"Failed to download {url}: {e}")
+        return None
+
+
+def download_poster_image(eventmedia, target_dir, base_filename):
+    """
+    Download poster image from eventmedia field.
+
+    Parameters
+    ----------
+    eventmedia : str
+        Event media field (may contain JSON or URLs)
+    target_dir : Path
+        Directory to save image to
+    base_filename : str
+        Base filename (extension will be added based on image type)
+
+    Returns
+    -------
+    str or None
+        Filename if successful, None otherwise
+    """
+    try:
+        import json
+
+        # Try to parse as JSON
+        if eventmedia and eventmedia.strip().startswith("["):
+            media_list = json.loads(eventmedia)
+            for media_item in media_list:
+                if isinstance(media_item, dict) and "url" in media_item:
+                    # Check if it's an image
+                    url = media_item["url"]
+                    if any(ext in url.lower() for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]):
+                        # Determine extension
+                        ext = url.split(".")[-1].split("?")[0]
+                        filename = f"{base_filename}.{ext}"
+                        return download_file(url, target_dir, filename)
+    except Exception as e:
+        logger.warning(f"Failed to parse eventmedia: {e}")
+
+    return None
 
 
 @app.errorhandler(404)
