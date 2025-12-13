@@ -6,6 +6,7 @@ including downloading data, creating databases, and generating embeddings.
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -16,6 +17,29 @@ from .database import DatabaseManager
 from .downloader import download_neurips_data
 from .embeddings import EmbeddingsManager, EmbeddingsError
 from .rag import RAGChat, RAGError
+
+
+def setup_logging(verbosity: int) -> None:
+    """
+    Configure logging based on verbosity level.
+
+    Parameters
+    ----------
+    verbosity : int
+        Verbosity level (0=WARNING, 1=INFO, 2+=DEBUG)
+    """
+    if verbosity == 0:
+        level = logging.WARNING
+    elif verbosity == 1:
+        level = logging.INFO
+    else:
+        level = logging.DEBUG
+
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
 
 def create_embeddings_command(args: argparse.Namespace) -> int:
@@ -608,6 +632,15 @@ Examples:
         """,
     )
 
+    # Add global verbosity flag
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase verbosity (can be repeated: -v for INFO, -vv for DEBUG)",
+    )
+
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # Download command
@@ -827,6 +860,9 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # Setup logging based on verbosity
+    setup_logging(args.verbose)
 
     if not args.command:
         parser.print_help()
