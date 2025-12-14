@@ -432,10 +432,530 @@ def get_years():
         return jsonify({"error": str(e)}), 500
 
 
+def natural_sort_key(s):
+    """
+    Generate a sort key for natural sorting of strings with numbers.
+
+    Parameters
+    ----------
+    s : str
+        String to generate sort key for
+
+    Returns
+    -------
+    tuple
+        Sort key that enables natural number sorting
+    """
+    import re
+
+    def atoi(text):
+        return int(text) if text.isdigit() else text
+
+    return [atoi(c) for c in re.split(r"(\d+)", s)]
+
+
+def fetch_conference_info():
+    """
+    Fetch conference information from NeurIPS website.
+
+    Returns
+    -------
+    dict or None
+        Conference information dictionary with keys: name, dates, location, description
+        Returns None if fetching fails
+    """
+    try:
+        # Try to import BeautifulSoup
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            logger.warning("BeautifulSoup not installed, using fallback conference info")
+            return None
+
+        import re
+
+        conference_url = "https://neurips.cc/Conferences/2025"
+        response = requests.get(conference_url, timeout=10)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.content, "html.parser")
+
+        conf_info = {
+            "name": "38th Conference on Neural Information Processing Systems (NeurIPS 2025)",
+            "dates": None,
+            "location": None,
+            "description": None,
+        }
+
+        # Try to find conference title
+        title_elem = soup.find("h1") or soup.find("title")
+        if title_elem:
+            title_text = title_elem.get_text(strip=True)
+            if "NeurIPS" in title_text or "Neural Information Processing Systems" in title_text:
+                conf_info["name"] = title_text
+
+        # Try to find dates - look for patterns like "December 9-15, 2025"
+        page_text = soup.get_text()
+        date_patterns = [
+            r"(December\s+\d+[-–]\d+,\s+\d{4})",
+            r"(Dec\s+\d+[-–]\d+,\s+\d{4})",
+            r"(\d{1,2}[-–]\d{1,2}\s+December\s+\d{4})",
+        ]
+        for pattern in date_patterns:
+            match = re.search(pattern, page_text)
+            if match:
+                conf_info["dates"] = match.group(1)
+                break
+
+        # Try to find location - look for "Vancouver" mentions
+        location_patterns = [
+            r"(Vancouver\s+Convention\s+Centre(?:,\s+(?:Vancouver|BC|British\s+Columbia))?(?:,\s+Canada)?)",
+            r"(Vancouver(?:,\s+(?:BC|British\s+Columbia))?(?:,\s+Canada)?)",
+        ]
+        for pattern in location_patterns:
+            match = re.search(pattern, page_text)
+            if match:
+                conf_info["location"] = match.group(1)
+                break
+
+        # Try to find conference description/about text
+        about_section = soup.find(["div", "p"], class_=re.compile(r"about|description", re.I))
+        if about_section:
+            desc_text = about_section.get_text(strip=True)
+            # Limit description length
+            if len(desc_text) > 500:
+                desc_text = desc_text[:500] + "..."
+            conf_info["description"] = desc_text
+
+        logger.info(f"Fetched conference info: {conf_info}")
+        return conf_info
+
+    except Exception as e:
+        logger.warning(f"Failed to fetch conference info from website: {e}")
+        return None
+
+
+def generate_all_papers_markdown(papers, title):
+    """
+    Generate markdown for all papers in a single file.
+
+    Parameters
+    ----------
+    papers : list
+        List of papers
+    title : str
+        Title for the markdown file
+
+    Returns
+    -------
+    str
+        Markdown content
+    """
+    markdown = f"# {title}\n\n"
+    markdown += f"**Papers:** {len(papers)}\n\n"
+    markdown += "---\n\n"
+
+    # Group by session
+    sessions = {}
+    for paper in papers:
+        session = paper.get("session") or "No Session"
+        if session not in sessions:
+            sessions[session] = []
+        sessions[session].append(paper)
+
+    # Write each session
+    for session in sorted(sessions.keys()):
+        session_papers = sessions[session]
+        markdown += f"## {session}\n\n"
+        markdown += f"**Papers in this session:** {len(session_papers)}\n\n"
+
+        for paper in session_papers:
+            stars = "⭐" * paper.get("priority", 0)
+            markdown += f"### {paper.get('name', 'Untitled')}\n\n"
+            markdown += f"**Rating:** {stars} ({paper.get('priority', 0)}/5)\n\n"
+
+            if paper.get("searchTerm"):
+                markdown += f"**Search Term:** {paper.get('searchTerm')}\n\n"
+
+            if paper.get("authors"):
+                authors = ", ".join(paper["authors"]) if isinstance(paper["authors"], list) else paper["authors"]
+                markdown += f"**Authors:** {authors}\n\n"
+
+            if paper.get("poster_position"):
+                markdown += f"**Poster:** {paper['poster_position']}\n\n"
+
+            # Link to PDF on OpenReview
+            paper_id = paper["id"]
+            pdf_url = paper.get("paper_pdf_url")
+            if not pdf_url and paper.get("paper_url"):
+                pdf_url = paper["paper_url"].replace("/forum?id=", "/pdf?id=")
+            if pdf_url:
+                markdown += f"**PDF:** [View on OpenReview]({pdf_url})\n\n"
+
+            if paper.get("paper_url"):
+                markdown += f"**Paper URL:** {paper['paper_url']}\n\n"
+
+            if paper.get("url"):
+                markdown += f"**Source URL:** {paper['url']}\n\n"
+
+            if paper.get("abstract"):
+                markdown += f"**Abstract:**\n\n{paper['abstract']}\n\n"
+
+            # Link to poster image
+            poster_url = get_poster_url(paper.get("eventmedia"), paper_id)
+            if poster_url:
+                markdown += f"**Poster Image:** ![Poster]({poster_url})\n\n"
+
+            markdown += "---\n\n"
+
+    return markdown
+
+
+def generate_folder_structure_export(papers, search_query, sort_order="search-rating-poster"):
+    """
+    Generate a zip file with folder structure respecting the sort order.
+
+    File organization based on first sort priority:
+    - search-rating-poster: Separate files per search term
+    - rating-poster-search: Separate files per rating level
+    - poster-search-rating: Single file with all papers (poster # is first)
+
+    Parameters
+    ----------
+    papers : list
+        List of paper dictionaries (already sorted)
+    search_query : str
+        Search query context
+    sort_order : str
+        Sort order used ('search-rating-poster', 'rating-poster-search', 'poster-search-rating')
+
+    Returns
+    -------
+    BytesIO
+        Buffer containing zip file
+    """
+    from datetime import datetime
+    import re
+
+    # Create in-memory zip file
+    zip_buffer = BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+        # Generate main README.md with conference information
+        readme_content = generate_main_readme(papers, search_query, sort_order)
+        zipf.writestr("README.md", readme_content)
+
+        if sort_order == "poster-search-rating":
+            # Poster number is first priority - all papers in one single file
+            all_papers_markdown = generate_all_papers_markdown(papers, "All Papers (by Poster #)")
+            zipf.writestr("all_papers.md", all_papers_markdown)
+
+        elif sort_order == "rating-poster-search":
+            # Rating is first priority - split by rating
+            priority_groups = {}
+            for paper in papers:
+                priority = paper.get("priority", 0)
+                if priority not in priority_groups:
+                    priority_groups[priority] = []
+                priority_groups[priority].append(paper)
+
+            # Create a markdown file for each priority rating
+            for priority in sorted(priority_groups.keys(), reverse=True):  # Higher priorities first
+                priority_papers = priority_groups[priority]
+                priority_stars = "⭐" * priority
+                priority_name = f"{priority}_stars" if priority > 0 else "0_stars"
+
+                # Generate markdown for this priority level
+                priority_markdown = generate_all_papers_markdown(
+                    priority_papers, f"{priority_stars} {priority} Stars ({len(priority_papers)} papers)"
+                )
+
+                # Write to file named by priority
+                zipf.writestr(f"{priority_name}.md", priority_markdown)
+
+        else:  # sort_order == "search-rating-poster"
+            # Search term is first priority - split by search term
+            search_terms = {}
+            for paper in papers:
+                search_term = paper.get("searchTerm") or "Unknown"
+                if search_term not in search_terms:
+                    search_terms[search_term] = []
+                search_terms[search_term].append(paper)
+
+            # Create a markdown file for each search term
+            for search_term, term_papers in search_terms.items():
+                # Sanitize search term for filename
+                safe_name = re.sub(r"[^\w\s-]", "", search_term).strip().replace(" ", "_")
+                safe_name = safe_name[:50]  # Limit length
+
+                if not safe_name:
+                    safe_name = "unknown"
+
+                # Generate markdown for this search term
+                term_markdown = generate_search_term_markdown(search_term, term_papers)
+
+                # Write to file named by search term
+                zipf.writestr(f"{safe_name}.md", term_markdown)
+
+    zip_buffer.seek(0)
+    return zip_buffer
+
+
+def generate_main_readme(papers, search_query, sort_order="search-rating-poster"):
+    """
+    Generate main README.md with conference overview and links to search term files.
+
+    Parameters
+    ----------
+    papers : list
+        List of paper dictionaries (already sorted)
+    search_query : str
+        Search query context
+    sort_order : str
+        Sort order used ('search-rating-poster', 'rating-poster-search', 'poster-search-rating')
+
+    Returns
+    -------
+    str
+        Markdown content for main README
+    """
+    from datetime import datetime
+    import re
+    from bs4 import BeautifulSoup
+
+    markdown = "# NeurIPS 2025 - Interesting Papers\n\n"
+
+    # Conference information - fetch from website
+    markdown += "## Conference Information\n\n"
+
+    # Try to fetch conference info from neurips.cc
+    conf_info = fetch_conference_info()
+
+    if conf_info:
+        markdown += f"**Conference:** {conf_info.get('name', '38th Conference on Neural Information Processing Systems (NeurIPS 2025)')}\n\n"
+        if conf_info.get("dates"):
+            markdown += f"**Dates:** {conf_info['dates']}\n\n"
+        if conf_info.get("location"):
+            markdown += f"**Location:** {conf_info['location']}\n\n"
+        markdown += f"**Website:** [https://neurips.cc/](https://neurips.cc/)\n\n"
+        if conf_info.get("description"):
+            markdown += f"**About:** {conf_info['description']}\n\n"
+    else:
+        # Fallback to static information if scraping fails
+        markdown += "**Conference:** 38th Conference on Neural Information Processing Systems (NeurIPS 2025)\n\n"
+        markdown += "**Dates:** December 9-15, 2025\n\n"
+        markdown += "**Location:** Vancouver Convention Centre, Vancouver, Canada\n\n"
+        markdown += "**Website:** [https://neurips.cc/](https://neurips.cc/)\n\n"
+        markdown += (
+            "**Topic:** Neural Information Processing Systems - Machine Learning and Artificial Intelligence\n\n"
+        )
+
+    markdown += "---\n\n"
+
+    # Export metadata
+    markdown += "## Export Information\n\n"
+    markdown += f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    markdown += f"**Total Papers:** {len(papers)}\n\n"
+
+    if search_query:
+        markdown += f"**Search Context:** {search_query}\n\n"
+
+    # Document sort order
+    sort_order_descriptions = {
+        "search-rating-poster": "Search Term → Rating → Poster #",
+        "rating-poster-search": "Rating → Poster # → Search Term",
+        "poster-search-rating": "Poster # → Search Term → Rating",
+    }
+    sort_desc = sort_order_descriptions.get(sort_order, sort_order)
+    markdown += f"**Sort Order:** {sort_desc}\n\n"
+
+    markdown += "---\n\n"
+
+    # Group papers by search term and session
+    search_terms = {}
+    for paper in papers:
+        search_term = paper.get("searchTerm") or "Unknown"
+        if search_term not in search_terms:
+            search_terms[search_term] = {"count": 0, "sessions": set(), "avg_priority": 0, "priorities": []}
+        search_terms[search_term]["count"] += 1
+        search_terms[search_term]["priorities"].append(paper.get("priority", 0))
+        if paper.get("session"):
+            search_terms[search_term]["sessions"].add(paper["session"])
+
+    # Calculate averages
+    for term_data in search_terms.values():
+        if term_data["priorities"]:
+            term_data["avg_priority"] = sum(term_data["priorities"]) / len(term_data["priorities"])
+
+    # Generate table of contents based on sort order
+    if sort_order == "poster-search-rating":
+        # Single file with all papers
+        markdown += "## Papers\n\n"
+        markdown += f"All papers are organized in a single file: [View All Papers](all_papers.md)\n\n"
+        markdown += f"**Total Papers:** {len(papers)}\n\n"
+
+        # Still show search terms summary
+        markdown += "### Search Terms Summary\n\n"
+        markdown += "| Search Term | Papers | Sessions | Avg Rating |\n"
+        markdown += "|-------------|--------|----------|------------|\n"
+
+        for search_term in sorted(search_terms.keys()):
+            term_data = search_terms[search_term]
+            sessions_str = f"{len(term_data['sessions'])} session(s)"
+            avg_stars = "⭐" * round(term_data["avg_priority"])
+            markdown += f"| {search_term} | {term_data['count']} | {sessions_str} | {avg_stars} ({term_data['avg_priority']:.1f}/5) |\n"
+
+    elif sort_order == "rating-poster-search":
+        # Files organized by rating
+        markdown += "## Papers by Rating\n\n"
+
+        # Group by priority
+        priority_groups = {}
+        for paper in papers:
+            priority = paper.get("priority", 0)
+            if priority not in priority_groups:
+                priority_groups[priority] = {"count": 0, "search_terms": set()}
+            priority_groups[priority]["count"] += 1
+            priority_groups[priority]["search_terms"].add(paper.get("searchTerm") or "Unknown")
+
+        markdown += "| Rating | Papers | Search Terms | File |\n"
+        markdown += "|--------|--------|--------------|------|\n"
+
+        for priority in sorted(priority_groups.keys(), reverse=True):
+            priority_data = priority_groups[priority]
+            priority_stars = "⭐" * priority
+            priority_name = f"{priority}_stars" if priority > 0 else "0_stars"
+            search_terms_str = ", ".join(sorted(priority_data["search_terms"]))
+            if len(search_terms_str) > 50:
+                search_terms_str = search_terms_str[:50] + "..."
+            markdown += f"| {priority_stars} {priority}/5 | {priority_data['count']} | {search_terms_str} | [{priority_name}.md]({priority_name}.md) |\n"
+
+        markdown += "\n### Search Terms Summary\n\n"
+        markdown += "| Search Term | Papers | Sessions | Avg Rating |\n"
+        markdown += "|-------------|--------|----------|------------|\n"
+
+        for search_term in sorted(search_terms.keys()):
+            term_data = search_terms[search_term]
+            sessions_str = f"{len(term_data['sessions'])} session(s)"
+            avg_stars = "⭐" * round(term_data["avg_priority"])
+            markdown += f"| {search_term} | {term_data['count']} | {sessions_str} | {avg_stars} ({term_data['avg_priority']:.1f}/5) |\n"
+
+    else:  # search-rating-poster
+        # Files organized by search term
+        markdown += "## Papers by Search Term\n\n"
+        markdown += "| Search Term | Papers | Sessions | Avg Rating | File |\n"
+        markdown += "|-------------|--------|----------|------------|------|\n"
+
+        for search_term in sorted(search_terms.keys()):
+            term_data = search_terms[search_term]
+            safe_name = re.sub(r"[^\w\s-]", "", search_term).strip().replace(" ", "_")
+            safe_name = safe_name[:50]
+            if not safe_name:
+                safe_name = "unknown"
+
+            sessions_str = f"{len(term_data['sessions'])} session(s)"
+            avg_stars = "⭐" * round(term_data["avg_priority"])
+
+            markdown += f"| [{search_term}]({safe_name}.md) | {term_data['count']} | {sessions_str} | {avg_stars} ({term_data['avg_priority']:.1f}/5) | {safe_name}.md |\n"
+
+    markdown += "\n---\n\n"
+
+    # Session overview
+    sessions = {}
+    for paper in papers:
+        session = paper.get("session") or "No Session"
+        if session not in sessions:
+            sessions[session] = {"count": 0, "search_terms": set()}
+        sessions[session]["count"] += 1
+        sessions[session]["search_terms"].add(paper.get("searchTerm") or "Unknown")
+
+    markdown += "## Sessions Overview\n\n"
+    for session in sorted(sessions.keys()):
+        session_data = sessions[session]
+        markdown += f"### {session}\n\n"
+        markdown += f"- **Papers:** {session_data['count']}\n"
+        markdown += f"- **Search Terms:** {', '.join(sorted(session_data['search_terms']))}\n\n"
+
+    return markdown
+
+
+def generate_search_term_markdown(search_term, papers):
+    """
+    Generate markdown for a single search term with all its papers.
+
+    Parameters
+    ----------
+    search_term : str
+        The search term
+    papers : list
+        List of papers for this search term
+
+    Returns
+    -------
+    str
+        Markdown content
+    """
+    markdown = f"# {search_term}\n\n"
+    markdown += f"**Papers:** {len(papers)}\n\n"
+    markdown += "---\n\n"
+
+    # Group by session
+    sessions = {}
+    for paper in papers:
+        session = paper.get("session") or "No Session"
+        if session not in sessions:
+            sessions[session] = []
+        sessions[session].append(paper)
+
+    # Write each session
+    for session in sorted(sessions.keys()):
+        session_papers = sessions[session]
+        markdown += f"## {session}\n\n"
+        markdown += f"**Papers in this session:** {len(session_papers)}\n\n"
+
+        for paper in session_papers:
+            stars = "⭐" * paper.get("priority", 0)
+            markdown += f"### {paper.get('name', 'Untitled')}\n\n"
+            markdown += f"**Rating:** {stars} ({paper.get('priority', 0)}/5)\n\n"
+
+            if paper.get("authors"):
+                authors = ", ".join(paper["authors"]) if isinstance(paper["authors"], list) else paper["authors"]
+                markdown += f"**Authors:** {authors}\n\n"
+
+            if paper.get("poster_position"):
+                markdown += f"**Poster:** {paper['poster_position']}\n\n"
+
+            # Link to PDF on OpenReview
+            paper_id = paper["id"]
+            pdf_url = paper.get("paper_pdf_url")
+            if not pdf_url and paper.get("paper_url"):
+                pdf_url = paper["paper_url"].replace("/forum?id=", "/pdf?id=")
+            if pdf_url:
+                markdown += f"**PDF:** [View on OpenReview]({pdf_url})\n\n"
+
+            if paper.get("paper_url"):
+                markdown += f"**Paper URL:** {paper['paper_url']}\n\n"
+
+            if paper.get("url"):
+                markdown += f"**Source URL:** {paper['url']}\n\n"
+
+            if paper.get("abstract"):
+                markdown += f"**Abstract:**\n\n{paper['abstract']}\n\n"
+
+            # Link to poster image
+            poster_url = get_poster_url(paper.get("eventmedia"), paper_id)
+            if poster_url:
+                markdown += f"**Poster Image:** ![Poster]({poster_url})\n\n"
+
+            markdown += "---\n\n"
+
+    return markdown
+
+
 @app.route("/api/export/interesting-papers", methods=["POST"])
 def export_interesting_papers():
     """
-    Export interesting papers to markdown with optional PDF and image downloads.
+    Export interesting papers to a zip file with folder structure.
 
     Parameters
     ----------
@@ -449,13 +969,14 @@ def export_interesting_papers():
     Returns
     -------
     file
-        Markdown file containing paper information with remote links to assets
+        Zip file containing folder structure with README.md and search term markdown files
     """
     try:
         data = request.json
         paper_ids = data.get("paper_ids", [])
         priorities = data.get("priorities", {})
         search_query = data.get("search_query", "")
+        sort_order = data.get("sort_order", "search-rating-poster")
 
         if not paper_ids:
             return jsonify({"error": "No paper IDs provided"}), 400
@@ -485,28 +1006,52 @@ def export_interesting_papers():
         if not papers:
             return jsonify({"error": "No papers found"}), 404
 
-        # Sort papers by session, search term, priority, and poster position
-        papers.sort(
-            key=lambda p: (
-                p.get("session") or "",
-                p.get("searchTerm") or "",
-                -p.get("priority", 0),  # Descending priority
-                p.get("poster_position") or "",
+        # Sort papers based on the selected sort order
+        if sort_order == "search-rating-poster":
+            # Search term, then priority, then poster position
+            papers.sort(
+                key=lambda p: (
+                    p.get("searchTerm") or "",
+                    -p.get("priority", 0),  # Descending priority
+                    natural_sort_key(p.get("poster_position") or ""),
+                )
             )
-        )
+        elif sort_order == "rating-poster-search":
+            # Priority, then poster position, then search term
+            papers.sort(
+                key=lambda p: (
+                    -p.get("priority", 0),  # Descending priority
+                    natural_sort_key(p.get("poster_position") or ""),
+                    p.get("searchTerm") or "",
+                )
+            )
+        elif sort_order == "poster-search-rating":
+            # Poster position, then search term, then priority
+            papers.sort(
+                key=lambda p: (
+                    natural_sort_key(p.get("poster_position") or ""),
+                    p.get("searchTerm") or "",
+                    -p.get("priority", 0),  # Descending priority
+                )
+            )
+        else:
+            # Default: search term, priority, poster position
+            papers.sort(
+                key=lambda p: (
+                    p.get("searchTerm") or "",
+                    -p.get("priority", 0),  # Descending priority
+                    natural_sort_key(p.get("poster_position") or ""),
+                )
+            )
 
-        # Generate markdown with remote links (no asset downloads)
-        markdown = generate_markdown_with_assets(papers, search_query, None)
-
-        # Return markdown file directly
-        markdown_buffer = BytesIO(markdown.encode("utf-8"))
-        markdown_buffer.seek(0)
+        # Generate zip file with folder structure
+        zip_buffer = generate_folder_structure_export(papers, search_query, sort_order)
 
         return send_file(
-            markdown_buffer,
-            mimetype="text/markdown",
+            zip_buffer,
+            mimetype="application/zip",
             as_attachment=True,
-            download_name=f'interesting-papers-{papers[0].get("year", "2025")}.md',
+            download_name=f'interesting-papers-{papers[0].get("year", "2025")}.zip',
         )
 
     except Exception as e:

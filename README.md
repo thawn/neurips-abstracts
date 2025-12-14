@@ -588,6 +588,4 @@ with EmbeddingsManager() as em, DatabaseManager("neurips.db") as db:
   - consider [multi-turn conversation refinement](https://www.emergentmind.com/topics/multi-turn-rag-conversations)
   - Implement citation extraction and validation
 - selected papers list:
-  - individual tabs for poster sessions
-  - dynamic sorting
   - fix bug that search term changes when changing rating

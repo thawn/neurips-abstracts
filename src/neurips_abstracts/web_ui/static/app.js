@@ -397,7 +397,8 @@ async function saveInterestingPapersAsMarkdown(event) {
             body: JSON.stringify({
                 paper_ids: paperIds,
                 priorities: paperPriorities,
-                search_query: searchQuery
+                search_query: searchQuery,
+                sort_order: interestingPapersSortOrder
             })
         });
 
@@ -406,12 +407,12 @@ async function saveInterestingPapersAsMarkdown(event) {
             throw new Error(errorData.error || 'Failed to generate export');
         }
 
-        // Get the markdown file
+        // Get the zip file
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `interesting-papers-${new Date().toISOString().split('T')[0]}.md`;
+        a.download = `interesting-papers-${new Date().toISOString().split('T')[0]}.zip`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
