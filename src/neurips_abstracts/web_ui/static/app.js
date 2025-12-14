@@ -7,6 +7,30 @@ let chatHistory = [];
 let paperPriorities = {}; // Store paper priorities: { paperId: { priority: number, searchTerm: string } }
 let currentSearchTerm = ''; // Track the current search term
 let currentInterestingSession = null; // Track the current selected session in interesting papers tab
+let interestingPapersSortOrder = 'search-rating-poster'; // Sort order: 'search-rating-poster', 'rating-poster-search', or 'poster-search-rating'
+
+// Utility: Natural sort comparison for poster positions
+// Handles strings like "Board 123" or "123" correctly (99 < 100 < 1000)
+function naturalSortPosterPosition(a, b) {
+    const aPos = a || '';
+    const bPos = b || '';
+    
+    // Extract numbers from the strings
+    const aMatch = aPos.match(/\d+/);
+    const bMatch = bPos.match(/\d+/);
+    
+    if (aMatch && bMatch) {
+        const aNum = parseInt(aMatch[0], 10);
+        const bNum = parseInt(bMatch[0], 10);
+        
+        if (aNum !== bNum) {
+            return aNum - bNum;
+        }
+    }
+    
+    // Fallback to string comparison if no numbers or numbers are equal
+    return aPos.localeCompare(bPos);
+}
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', function () {
@@ -26,6 +50,13 @@ function loadPriorities() {
             paperPriorities = {};
         }
     }
+    
+    // Load sort order preference
+    const storedSortOrder = localStorage.getItem('interestingPapersSortOrder');
+    if (storedSortOrder) {
+        interestingPapersSortOrder = storedSortOrder;
+    }
+    
     // Update the count in the tab
     updateInterestingPapersCount();
 }
@@ -178,37 +209,63 @@ function displayInterestingPapers(papers) {
         paper.searchTerm = paperData?.searchTerm || 'Unknown';
     });
 
-    // Sort by session, search term, priority (descending), and poster position
+    // Sort papers based on the selected sort order
     papers.sort((a, b) => {
-        // First by session
+        // First by session (always)
         const sessionCompare = (a.session || '').localeCompare(b.session || '');
         if (sessionCompare !== 0) return sessionCompare;
 
-        // Then by search term
-        const searchTermCompare = (a.searchTerm || '').localeCompare(b.searchTerm || '');
-        if (searchTermCompare !== 0) return searchTermCompare;
-
-        // Then by priority (descending - higher priority first)
-        if (a.priority !== b.priority) return b.priority - a.priority;
-
-        // Finally by poster position
-        const aPoster = a.poster_position || '';
-        const bPoster = b.poster_position || '';
-        return aPoster.localeCompare(bPoster);
+        // Then apply the selected sort order
+        if (interestingPapersSortOrder === 'search-rating-poster') {
+            // Search term, then priority, then poster position
+            const searchTermCompare = (a.searchTerm || '').localeCompare(b.searchTerm || '');
+            if (searchTermCompare !== 0) return searchTermCompare;
+            
+            if (a.priority !== b.priority) return b.priority - a.priority;
+            
+            return naturalSortPosterPosition(a.poster_position, b.poster_position);
+        } else if (interestingPapersSortOrder === 'rating-poster-search') {
+            // Priority, then poster position, then search term
+            if (a.priority !== b.priority) return b.priority - a.priority;
+            
+            const posterCompare = naturalSortPosterPosition(a.poster_position, b.poster_position);
+            if (posterCompare !== 0) return posterCompare;
+            
+            return (a.searchTerm || '').localeCompare(b.searchTerm || '');
+        } else if (interestingPapersSortOrder === 'poster-search-rating') {
+            // Poster position, then search term, then priority
+            const posterCompare = naturalSortPosterPosition(a.poster_position, b.poster_position);
+            if (posterCompare !== 0) return posterCompare;
+            
+            const searchTermCompare = (a.searchTerm || '').localeCompare(b.searchTerm || '');
+            if (searchTermCompare !== 0) return searchTermCompare;
+            
+            return b.priority - a.priority;
+        }
     });
 
-    // Group by session, then by search term
+    // Group by session, then by grouping key based on sort order
     const groupedBySession = {};
     papers.forEach(paper => {
         const session = paper.session || 'No Session';
         if (!groupedBySession[session]) {
             groupedBySession[session] = {};
         }
-        const searchTerm = paper.searchTerm || 'Unknown';
-        if (!groupedBySession[session][searchTerm]) {
-            groupedBySession[session][searchTerm] = [];
+        
+        // Determine the grouping key based on sort order
+        let groupKey;
+        if (interestingPapersSortOrder === 'search-rating-poster') {
+            groupKey = paper.searchTerm || 'Unknown';
+        } else if (interestingPapersSortOrder === 'rating-poster-search') {
+            groupKey = `${paper.priority} ${paper.priority === 1 ? 'star' : 'stars'}`;
+        } else if (interestingPapersSortOrder === 'poster-search-rating') {
+            groupKey = 'All Papers'; // Don't group by poster, just show all
         }
-        groupedBySession[session][searchTerm].push(paper);
+        
+        if (!groupedBySession[session][groupKey]) {
+            groupedBySession[session][groupKey] = [];
+        }
+        groupedBySession[session][groupKey].push(paper);
     });
 
     // Get all sessions
@@ -238,25 +295,58 @@ function displayInterestingPapers(papers) {
     let html = '';
 
     if (currentInterestingSession && groupedBySession[currentInterestingSession]) {
-        const searchTerms = groupedBySession[currentInterestingSession];
+        const groups = groupedBySession[currentInterestingSession];
 
-        for (const [searchTerm, termPapers] of Object.entries(searchTerms)) {
-            html += `
-                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow-md p-5 mb-4">
-                    <h3 class="text-lg font-bold text-gray-800 mb-4 border-b border-blue-200 pb-2">
-                        <i class="fas fa-search text-blue-600 mr-2"></i>${escapeHtml(searchTerm)}
-                    </h3>
-                    <div class="space-y-4">
-            `;
+        // Determine icon based on sort order
+        let groupIcon = 'fa-search'; // default for search-rating-poster
+        if (interestingPapersSortOrder === 'rating-poster-search') {
+            groupIcon = 'fa-star';
+        } else if (interestingPapersSortOrder === 'poster-search-rating') {
+            groupIcon = 'fa-list'; // Don't show grouping header for poster sort
+        }
 
-            termPapers.forEach(paper => {
-                html += formatPaperCard(paper, { compact: false });
+        // Sort group keys appropriately
+        let sortedGroupKeys = Object.keys(groups);
+        if (interestingPapersSortOrder === 'search-rating-poster') {
+            // Sort alphabetically by search term
+            sortedGroupKeys.sort();
+        } else if (interestingPapersSortOrder === 'rating-poster-search') {
+            // Sort by star count (descending - highest rating first)
+            sortedGroupKeys.sort((a, b) => {
+                const starsA = parseInt(a.split(' ')[0]);
+                const starsB = parseInt(b.split(' ')[0]);
+                return starsB - starsA;
             });
+        }
+        // For poster-search-rating, no sorting needed since there's only one group
 
-            html += `
+        for (const groupKey of sortedGroupKeys) {
+            const groupPapers = groups[groupKey];
+            // For poster-search-rating, don't show the group header wrapper
+            if (interestingPapersSortOrder === 'poster-search-rating') {
+                html += '<div class="space-y-4">';
+                groupPapers.forEach(paper => {
+                    html += formatPaperCard(paper, { compact: false });
+                });
+                html += '</div>';
+            } else {
+                html += `
+                    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow-md p-5 mb-4">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 border-b border-blue-200 pb-2">
+                            <i class="fas ${groupIcon} text-blue-600 mr-2"></i>${escapeHtml(groupKey)}
+                        </h3>
+                        <div class="space-y-4">
+                `;
+
+                groupPapers.forEach(paper => {
+                    html += formatPaperCard(paper, { compact: false });
+                });
+
+                html += `
+                        </div>
                     </div>
-                </div>
-            `;
+                `;
+            }
         }
     }
 
@@ -266,6 +356,13 @@ function displayInterestingPapers(papers) {
 // Switch to a different session in the interesting papers tab
 function switchInterestingSession(session) {
     currentInterestingSession = session;
+    loadInterestingPapers();
+}
+
+// Change the sort order for interesting papers
+function changeInterestingPapersSortOrder(sortOrder) {
+    interestingPapersSortOrder = sortOrder;
+    localStorage.setItem('interestingPapersSortOrder', sortOrder);
     loadInterestingPapers();
 }
 
@@ -346,9 +443,7 @@ function generateInterestingPapersMarkdown(papers) {
         const sessionCompare = (a.session || '').localeCompare(b.session || '');
         if (sessionCompare !== 0) return sessionCompare;
         if (a.priority !== b.priority) return b.priority - a.priority;
-        const aPoster = a.poster_position || '';
-        const bPoster = b.poster_position || '';
-        return aPoster.localeCompare(bPoster);
+        return naturalSortPosterPosition(a.poster_position, b.poster_position);
     });
 
     // Get current search context (if any)
@@ -433,6 +528,11 @@ function switchTab(tab) {
 
     // Load interesting papers when switching to that tab
     if (tab === 'interesting') {
+        // Update sort dropdown to match current sort order
+        const sortDropdown = document.getElementById('sort-order');
+        if (sortDropdown) {
+            sortDropdown.value = interestingPapersSortOrder;
+        }
         loadInterestingPapers();
     }
 }

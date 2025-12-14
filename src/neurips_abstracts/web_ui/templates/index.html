@@ -462,10 +462,21 @@
             <h2 class="text-2xl font-bold text-gray-800">
                 <i class="fas fa-star text-yellow-400 mr-2"></i>Interesting Papers
             </h2>
-            <button onclick="saveInterestingPapersAsMarkdown(event)"
-                class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-600 focus:ring-offset-2">
-                <i class="fas fa-download mr-2"></i>Save as Markdown
-            </button>
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center">
+                    <label for="sort-order" class="text-sm text-gray-600 mr-2">Sort by:</label>
+                    <select id="sort-order" onchange="changeInterestingPapersSortOrder(this.value)"
+                        class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-600 focus:border-transparent">
+                        <option value="search-rating-poster">Search Term → Rating → Poster #</option>
+                        <option value="rating-poster-search">Rating → Poster # → Search Term</option>
+                        <option value="poster-search-rating">Poster # → Search Term → Rating</option>
+                    </select>
+                </div>
+                <button onclick="saveInterestingPapersAsMarkdown(event)"
+                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:ring-2 focus:ring-purple-600 focus:ring-offset-2">
+                    <i class="fas fa-download mr-2"></i>Save as Markdown
+                </button>
+            </div>
         </div>
         <p class="text-sm text-gray-600 mb-4">
             Papers you've rated are shown here, organized by session, priority, and poster number.
