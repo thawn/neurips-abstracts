@@ -281,13 +281,12 @@ async function saveInterestingPapersAsMarkdown(event) {
             throw new Error(errorData.error || 'Failed to generate export');
         }
 
-        // Get the file (either .md or .zip depending on download_assets)
+        // Get the markdown file
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        const fileExtension = downloadAssets ? 'zip' : 'md';
-        a.download = `interesting-papers-${new Date().toISOString().split('T')[0]}.${fileExtension}`;
+        a.download = `interesting-papers-${new Date().toISOString().split('T')[0]}.md`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
