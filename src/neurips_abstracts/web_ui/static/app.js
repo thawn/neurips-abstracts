@@ -76,6 +76,7 @@ function setPaperPriority(paperId, priority) {
     event.stopPropagation();
 
     const currentPriority = paperPriorities[paperId]?.priority || 0;
+    const existingSearchTerm = paperPriorities[paperId]?.searchTerm;
 
     // If clicking the same star, remove the rating
     if (currentPriority === priority) {
@@ -86,7 +87,8 @@ function setPaperPriority(paperId, priority) {
     } else {
         paperPriorities[paperId] = {
             priority: priority,
-            searchTerm: currentSearchTerm || 'Unknown'
+            // Preserve the existing search term when updating, only use currentSearchTerm for new ratings
+            searchTerm: existingSearchTerm || currentSearchTerm || 'Unknown'
         };
     }
     savePriorities();
