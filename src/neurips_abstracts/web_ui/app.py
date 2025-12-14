@@ -775,13 +775,13 @@ def generate_markdown_with_assets(papers, search_query, assets_dir):
                 if paper.get("url"):
                     markdown += f"**Source URL:** {paper['url']}\n\n"
 
-                # Link to poster image on neurips.cc (not downloaded)
+                if paper.get("abstract"):
+                    markdown += f"**Abstract:**\n\n{paper['abstract']}\n\n"
+
+                # Link to poster image on neurips.cc (not downloaded) - placed after abstract
                 poster_url = get_poster_url(paper.get("eventmedia"), paper_id)
                 if poster_url:
                     markdown += f"**Poster Image:** ![Poster]({poster_url})\n\n"
-
-                if paper.get("abstract"):
-                    markdown += f"**Abstract:**\n\n{paper['abstract']}\n\n"
 
                 markdown += "---\n\n"
 
