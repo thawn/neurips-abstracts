@@ -6,6 +6,7 @@ let currentTab = 'search';
 let chatHistory = [];
 let paperPriorities = {}; // Store paper priorities: { paperId: { priority: number, searchTerm: string } }
 let currentSearchTerm = ''; // Track the current search term
+let currentInterestingSession = null; // Track the current selected session in interesting papers tab
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', function () {
@@ -106,8 +107,10 @@ function updateInterestingPapersCount() {
 // Load and display interesting papers
 async function loadInterestingPapers() {
     const listDiv = document.getElementById('interesting-papers-list');
+    const tabsContainer = document.getElementById('interesting-session-tabs');
+    const tabsNav = document.getElementById('interesting-session-tabs-nav');
 
-    // If no rated papers, show empty state
+    // If no rated papers, show empty state and hide tabs
     if (Object.keys(paperPriorities).length === 0) {
         listDiv.innerHTML = `
             <div class="text-center text-gray-500 py-12">
@@ -116,8 +119,12 @@ async function loadInterestingPapers() {
                 <p class="text-sm">Rate papers using the stars to add them here</p>
             </div>
         `;
+        tabsContainer.classList.add('hidden');
         return;
     }
+
+    // Show tabs container
+    tabsContainer.classList.remove('hidden');
 
     // Show loading
     listDiv.innerHTML = `
@@ -162,6 +169,7 @@ async function loadInterestingPapers() {
 // Display interesting papers grouped by search term
 function displayInterestingPapers(papers) {
     const listDiv = document.getElementById('interesting-papers-list');
+    const tabsNav = document.getElementById('interesting-session-tabs-nav');
 
     // Add priority and search term to each paper
     papers.forEach(paper => {
@@ -203,16 +211,34 @@ function displayInterestingPapers(papers) {
         groupedBySession[session][searchTerm].push(paper);
     });
 
-    // Generate HTML
+    // Get all sessions
+    const sessions = Object.keys(groupedBySession).sort();
+
+    // Set default session if not set or if the current session no longer exists
+    if (!currentInterestingSession || !sessions.includes(currentInterestingSession)) {
+        currentInterestingSession = sessions[0] || null;
+    }
+
+    // Generate session tabs
+    let tabsHtml = '';
+    sessions.forEach(session => {
+        const isActive = session === currentInterestingSession;
+        const activeClass = isActive ? 'border-b-2 border-purple-600 text-purple-600' : 'text-gray-600 hover:text-gray-800 hover:border-gray-300';
+        tabsHtml += `
+            <button 
+                onclick="switchInterestingSession('${escapeHtml(session).replace(/'/g, "\\'")}')"
+                class="px-6 py-3 text-sm font-medium ${activeClass} border-b-2 border-transparent focus:outline-none transition-colors whitespace-nowrap">
+                <i class="fas fa-calendar-alt mr-2"></i>${escapeHtml(session)}
+            </button>
+        `;
+    });
+    tabsNav.innerHTML = tabsHtml;
+
+    // Generate HTML for the selected session only
     let html = '';
 
-    for (const [session, searchTerms] of Object.entries(groupedBySession)) {
-        html += `
-            <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-                <h2 class="text-2xl font-bold text-gray-900 mb-6 border-b-2 border-green-300 pb-3">
-                    <i class="fas fa-calendar-alt text-green-600 mr-2"></i>${escapeHtml(session)}
-                </h2>
-        `;
+    if (currentInterestingSession && groupedBySession[currentInterestingSession]) {
+        const searchTerms = groupedBySession[currentInterestingSession];
 
         for (const [searchTerm, termPapers] of Object.entries(searchTerms)) {
             html += `
@@ -232,13 +258,15 @@ function displayInterestingPapers(papers) {
                 </div>
             `;
         }
-
-        html += `
-            </div>
-        `;
     }
 
     listDiv.innerHTML = html;
+}
+
+// Switch to a different session in the interesting papers tab
+function switchInterestingSession(session) {
+    currentInterestingSession = session;
+    loadInterestingPapers();
 }
 
 // Save interesting papers as markdown
