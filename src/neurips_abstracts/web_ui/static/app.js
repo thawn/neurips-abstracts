@@ -328,20 +328,34 @@ function displayInterestingPapers(papers) {
             if (interestingPapersSortOrder === 'poster-search-rating') {
                 html += '<div class="space-y-4">';
                 groupPapers.forEach(paper => {
-                    html += formatPaperCard(paper, { compact: false });
+                    html += formatPaperCard(paper, { compact: false, showSearchTerm: true });
                 });
                 html += '</div>';
             } else {
+                // Add edit button for search term if we're sorting by search terms
+                const editButton = (interestingPapersSortOrder === 'search-rating-poster')
+                    ? `<button onclick="editSearchTerm('${escapeHtml(currentInterestingSession).replace(/'/g, "\\'")}', '${escapeHtml(groupKey).replace(/'/g, "\\'")}', event)" 
+                              class="ml-2 text-sm text-purple-600 hover:text-purple-800 focus:outline-none" 
+                              title="Edit search term">
+                           <i class="fas fa-edit"></i>
+                       </button>`
+                    : '';
+
                 html += `
                     <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow-md p-5 mb-4">
-                        <h3 class="text-lg font-bold text-gray-800 mb-4 border-b border-blue-200 pb-2">
-                            <i class="fas ${groupIcon} text-blue-600 mr-2"></i>${escapeHtml(groupKey)}
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 border-b border-blue-200 pb-2 flex items-center justify-between">
+                            <span>
+                                <i class="fas ${groupIcon} text-blue-600 mr-2"></i>${escapeHtml(groupKey)}
+                            </span>
+                            ${editButton}
                         </h3>
                         <div class="space-y-4">
                 `;
 
                 groupPapers.forEach(paper => {
-                    html += formatPaperCard(paper, { compact: false });
+                    // Show search term badge only when not sorting by search term (to avoid redundancy)
+                    const showSearchTermBadge = interestingPapersSortOrder !== 'search-rating-poster';
+                    html += formatPaperCard(paper, { compact: false, showSearchTerm: showSearchTermBadge });
                 });
 
                 html += `
@@ -358,6 +372,87 @@ function displayInterestingPapers(papers) {
 // Switch to a different session in the interesting papers tab
 function switchInterestingSession(session) {
     currentInterestingSession = session;
+    loadInterestingPapers();
+}
+
+// Edit search term for a group of papers
+function editSearchTerm(session, oldSearchTerm, event) {
+    event.stopPropagation();
+
+    // Prompt user for new search term
+    const newSearchTerm = prompt('Edit search term:', oldSearchTerm);
+
+    // If user cancelled or entered empty string, do nothing
+    if (newSearchTerm === null || newSearchTerm.trim() === '') {
+        return;
+    }
+
+    const trimmedNewSearchTerm = newSearchTerm.trim();
+
+    // If search term hasn't changed, do nothing
+    if (trimmedNewSearchTerm === oldSearchTerm) {
+        return;
+    }
+
+    // Update all papers in this session with this search term
+    let updatedCount = 0;
+    for (const paperId in paperPriorities) {
+        const paperData = paperPriorities[paperId];
+        if (paperData.searchTerm === oldSearchTerm) {
+            // We need to verify this paper belongs to the correct session
+            // For now, update all papers with this search term
+            paperData.searchTerm = trimmedNewSearchTerm;
+            updatedCount++;
+        }
+    }
+
+    // Save the updated priorities
+    savePriorities();
+
+    // Reload the interesting papers view to show the changes
+    loadInterestingPapers();
+
+    // Show a brief confirmation message
+    if (updatedCount > 0) {
+        console.log(`Updated search term for ${updatedCount} paper(s)`);
+    }
+}
+
+// Edit search term for a single paper
+function editPaperSearchTerm(paperId, event) {
+    event.stopPropagation();
+
+    // Get current search term
+    const paperData = paperPriorities[paperId];
+    if (!paperData) {
+        console.error('Paper not found in priorities');
+        return;
+    }
+
+    const oldSearchTerm = paperData.searchTerm || 'Unknown';
+
+    // Prompt user for new search term
+    const newSearchTerm = prompt('Edit search term for this paper:', oldSearchTerm);
+
+    // If user cancelled or entered empty string, do nothing
+    if (newSearchTerm === null || newSearchTerm.trim() === '') {
+        return;
+    }
+
+    const trimmedNewSearchTerm = newSearchTerm.trim();
+
+    // If search term hasn't changed, do nothing
+    if (trimmedNewSearchTerm === oldSearchTerm) {
+        return;
+    }
+
+    // Update this paper's search term
+    paperData.searchTerm = trimmedNewSearchTerm;
+
+    // Save the updated priorities
+    savePriorities();
+
+    // Reload the interesting papers view to show the changes
     loadInterestingPapers();
 }
 
@@ -728,7 +823,8 @@ function formatPaperCard(paper, options = {}) {
         compact = false,
         showNumber = null,
         abstractLength = compact ? 200 : 300,
-        idPrefix = ''
+        idPrefix = '',
+        showSearchTerm = false
     } = options;
 
     const title = paper.name || paper.title || 'Untitled';
@@ -772,6 +868,14 @@ function formatPaperCard(paper, options = {}) {
     }
     if (paper.poster_position) {
         metadata += `<span class="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full mr-${compact ? '1' : '2'}"><i class="fas fa-map-pin mr-1"></i>Poster ${escapeHtml(paper.poster_position)}</span>`;
+    }
+    if (showSearchTerm && paper.searchTerm) {
+        metadata += `<span class="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full mr-${compact ? '1' : '2'} inline-flex items-center">
+            <i class="fas fa-search mr-1"></i>${escapeHtml(paper.searchTerm)}
+            <button onclick="editPaperSearchTerm(${paper.id}, event)" class="ml-1 text-purple-600 hover:text-purple-800 focus:outline-none" title="Edit search term">
+                <i class="fas fa-edit text-xs"></i>
+            </button>
+        </span>`;
     }
     if (paper.distance !== undefined) {
         metadata += `<span class="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full"><i class="fas fa-chart-line mr-1"></i>${(1 - paper.distance).toFixed(compact ? 2 : 3)}</span>`;
