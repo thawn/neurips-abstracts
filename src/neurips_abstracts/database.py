@@ -22,6 +22,59 @@ class DatabaseError(Exception):
     pass
 
 
+class EventMediaModel(BaseModel):
+    """
+    Pydantic model for event media item validation.
+
+    Attributes
+    ----------
+    id : int, optional
+        Media item identifier.
+    type : str, optional
+        Type of media (e.g., "Poster", "URL", "Image").
+    name : str, optional
+        Name/description of the media item.
+    file : str, optional
+        File path for the media (e.g., "/media/PosterPDFs/...").
+    url : str, optional
+        Direct URL to the media.
+    uri : str, optional
+        URI/link (e.g., OpenReview link).
+    modified : str, optional
+        Modification timestamp.
+    display_section : int, optional
+        Display section number.
+    visible : bool, optional
+        Visibility flag.
+    sortkey : int, optional
+        Sort key for ordering.
+    is_live_content : bool, optional
+        Flag indicating if content is live.
+    detailed_kind : str, optional
+        Detailed kind/subtype (e.g., "thumb" for thumbnails).
+    generated_from : int, optional
+        ID of the source media this was generated from.
+    resourcetype : str, optional
+        Resource type identifier (e.g., "UriEventmedia", "EventmediaImageFile").
+    """
+
+    id: Optional[int] = None
+    type: Optional[str] = ""
+    name: Optional[str] = ""
+    file: Optional[str] = None
+    uri: Optional[str] = None
+    modified: Optional[str] = None
+    display_section: Optional[int] = None
+    visible: Optional[bool] = None
+    sortkey: Optional[int] = None
+    is_live_content: Optional[bool] = None
+    detailed_kind: Optional[str] = None
+    generated_from: Optional[int] = None
+    resourcetype: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")  # Allow extra fields not in the model
+
+
 class AuthorModel(BaseModel):
     """
     Pydantic model for author data validation.
@@ -592,9 +645,29 @@ class DatabaseManager:
                 parent2 = paper.parent2
                 parent2_id = paper.parent2_id
 
-                eventmedia = paper.eventmedia
-                if isinstance(eventmedia, list):
-                    eventmedia = json.dumps(eventmedia)
+                # Validate and process eventmedia
+                eventmedia_data = paper.eventmedia
+                if isinstance(eventmedia_data, list):
+                    validated_eventmedia = []
+                    for media_item in eventmedia_data:
+                        if isinstance(media_item, dict):
+                            try:
+                                # Validate each media item
+                                validated_media = EventMediaModel(**media_item)
+                                validated_eventmedia.append(validated_media.model_dump(exclude_none=True))
+                            except ValidationError as e:
+                                logger.warning(f"EventMedia validation error in paper {paper_id}: {str(e)}")
+                                # Skip invalid media item but continue
+                                continue
+                        else:
+                            # Keep non-dict items as-is for backward compatibility
+                            validated_eventmedia.append(media_item)
+                    eventmedia = json.dumps(validated_eventmedia)
+                elif eventmedia_data is None:
+                    eventmedia = None
+                else:
+                    # Handle string or other types
+                    eventmedia = json.dumps(eventmedia_data) if eventmedia_data else None
 
                 show_in_schedule_overview = 1 if paper.show_in_schedule_overview else 0
                 visible = 1 if paper.visible else 0

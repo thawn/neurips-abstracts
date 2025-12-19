@@ -145,3 +145,93 @@ class TestPydanticValidation:
 
         papers = connected_db.search_papers(keyword="Test")
         assert papers[0]["id"] == 123456  # Should be integer
+
+    def test_eventmedia_validation(self, connected_db):
+        """Test that eventmedia items are validated correctly."""
+        import json
+
+        data = [
+            {
+                "id": 123456,
+                "name": "Test Paper with EventMedia",
+                "abstract": "Test abstract",
+                "eventmedia": [
+                    {
+                        "id": 125963,
+                        "modified": "2025-09-18T17:35:12.146761-07:00",
+                        "display_section": 1,
+                        "type": "URL",
+                        "name": "OpenReview",
+                        "visible": True,
+                        "sortkey": 0,
+                        "is_live_content": False,
+                        "uri": "https://openreview.net/forum?id=test",
+                        "resourcetype": "UriEventmedia",
+                    },
+                    {
+                        "id": 130075,
+                        "file": "/media/PosterPDFs/test.png",
+                        "modified": "2025-10-19T06:42:09.814134-07:00",
+                        "display_section": 1,
+                        "type": "Poster",
+                        "name": "Poster",
+                        "visible": True,
+                        "sortkey": 0,
+                        "is_live_content": False,
+                        "detailed_kind": "",
+                        "generated_from": None,
+                        "resourcetype": "EventmediaImageFile",
+                    },
+                ],
+            }
+        ]
+
+        count = connected_db.load_json_data(data)
+        assert count == 1
+
+        papers = connected_db.search_papers(keyword="EventMedia")
+        assert len(papers) == 1
+
+        # Verify eventmedia was stored correctly
+        eventmedia = json.loads(papers[0]["eventmedia"])
+        assert len(eventmedia) == 2
+        assert eventmedia[0]["type"] == "URL"
+        assert eventmedia[0]["uri"] == "https://openreview.net/forum?id=test"
+        assert eventmedia[1]["type"] == "Poster"
+        assert eventmedia[1]["file"] == "/media/PosterPDFs/test.png"
+
+    def test_invalid_eventmedia_skipped(self, connected_db):
+        """Test that invalid eventmedia items are skipped but paper is still inserted."""
+        import json
+
+        data = [
+            {
+                "id": 123456,
+                "name": "Test Paper with Mixed EventMedia",
+                "abstract": "Test abstract",
+                "eventmedia": [
+                    {
+                        "id": "not-a-number",  # Invalid: id should be int
+                        "type": "URL",
+                        "name": "Invalid Item",
+                    },
+                    {
+                        "id": 125963,
+                        "type": "URL",
+                        "name": "Valid Item",
+                        "uri": "https://test.com",
+                    },
+                ],
+            }
+        ]
+
+        count = connected_db.load_json_data(data)
+        assert count == 1
+
+        papers = connected_db.search_papers(keyword="Mixed")
+        assert len(papers) == 1
+
+        # Verify only valid eventmedia item was stored
+        eventmedia = json.loads(papers[0]["eventmedia"])
+        assert len(eventmedia) == 1
+        assert eventmedia[0]["name"] == "Valid Item"

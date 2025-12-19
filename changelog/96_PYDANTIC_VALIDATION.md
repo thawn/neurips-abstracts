@@ -35,18 +35,42 @@ Validates paper data with comprehensive field validation:
 - Extra fields not in the model are allowed (via `model_config = ConfigDict(extra="allow")`)
 - Handles mixed types (e.g., `diversity_event` can be bool or string)
 
+#### `EventMediaModel`
+Validates event media items with comprehensive field validation:
+- `id` (int, optional): Media item identifier
+- `type` (str, optional): Type of media (e.g., "Poster", "URL", "Image")
+- `name` (str, optional): Name/description of the media item
+- `file` (str, optional): File path for media (e.g., "/media/PosterPDFs/...")
+- `url` (str, optional): Direct URL to the media
+- `uri` (str, optional): URI/link (e.g., OpenReview link)
+- `modified` (str, optional): Modification timestamp
+- `display_section` (int, optional): Display section number
+- `visible` (bool, optional): Visibility flag
+- `sortkey` (int, optional): Sort key for ordering
+- `is_live_content` (bool, optional): Flag indicating if content is live
+- `detailed_kind` (str, optional): Detailed kind/subtype (e.g., "thumb" for thumbnails)
+- `generated_from` (int, optional): ID of the source media this was generated from
+- `resourcetype` (str, optional): Resource type identifier
+
+**Validation Rules:**
+- All fields are optional to support various media types
+- Extra fields are allowed for forward compatibility
+- Invalid media items are skipped with warnings
+
 ### 3. Enhanced `load_json_data()` Method
 
 The method now:
 1. **Validates each record** using `PaperModel` before insertion
 2. **Validates each author** using `AuthorModel` when processing author lists
-3. **Logs validation errors** with detailed error messages
-4. **Continues processing** valid records even when some records fail validation
-5. **Reports summary** of validation errors at the end
+3. **Validates each eventmedia item** using `EventMediaModel` when processing eventmedia arrays
+4. **Logs validation errors** with detailed error messages
+5. **Continues processing** valid records even when some records fail validation
+6. **Reports summary** of validation errors at the end
 
 **Error Handling:**
 - Invalid papers are skipped with a warning logged
 - Invalid authors within a paper are skipped, but the paper is still inserted
+- Invalid eventmedia items are skipped, but the paper and other valid media items are still inserted
 - All validation errors are collected and reported in the summary
 
 ### 4. Test Coverage
@@ -59,6 +83,8 @@ Created comprehensive test suite in `tests/test_pydantic_validation.py`:
 - ✅ Test valid data passes validation
 - ✅ Test extra fields are allowed
 - ✅ Test automatic type coercion
+- ✅ Test eventmedia validation with complete NeurIPS structure
+- ✅ Test invalid eventmedia items are gracefully skipped
 
 ### 5. Bug Fix
 
