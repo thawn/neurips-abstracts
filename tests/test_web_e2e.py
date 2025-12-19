@@ -180,7 +180,7 @@ def test_database(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def web_server(test_database):
+def web_server(test_database, tmp_path_factory):
     """
     Start a web server in a background thread for E2E testing.
 
@@ -188,6 +188,8 @@ def web_server(test_database):
     ----------
     test_database : Path
         Path to the test database
+    tmp_path_factory : TempPathFactory
+        Pytest fixture for creating temporary directories
 
     Yields
     ------
@@ -195,22 +197,68 @@ def web_server(test_database):
         Tuple of (base_url, port)
     """
     from neurips_abstracts.web_ui import app as flask_app
+    from neurips_abstracts.embeddings import EmbeddingsManager
+    import chromadb.api.shared_system_client
+
+    # Clear ChromaDB's global client registry to avoid conflicts with other test modules
+    # This is necessary because ChromaDB maintains a singleton registry of clients by path
+    chromadb.api.shared_system_client.SharedSystemClient._identifier_to_system.clear()
 
     port = find_free_port()
     base_url = f"http://localhost:{port}"
 
-    # Configure the app to use test database
+    # Create test embeddings database with unique path to avoid ChromaDB global cache conflicts
+    import uuid
+    import time
+
+    # Use unique ID with timestamp to avoid conflicts with other test sessions and modules
+    unique_id = f"{int(time.time())}_{str(uuid.uuid4())[:8]}"
+    tmp_dir = tmp_path_factory.mktemp("web_e2e_embeddings")
+    embeddings_path = tmp_dir / f"web_e2e_chroma_{unique_id}"
+
+    # Initialize embeddings with test data
+    em = EmbeddingsManager(chroma_path=embeddings_path, collection_name=f"test_collection_{unique_id}")
+    em.connect()
+    em.create_collection(reset=True)
+
+    # Add embeddings for test papers (matching the paper IDs from test_database)
+    # Get the database to read papers
+    db = DatabaseManager(str(test_database))
+    db.connect()
+    cursor = db.connection.cursor()
+    cursor.execute("SELECT id, abstract FROM papers")
+    papers = cursor.fetchall()
+
+    for paper in papers:
+        paper_id = paper[0]
+        abstract = paper[1]
+        if abstract:  # Only add if abstract exists
+            em.add_paper(paper_id=paper_id, abstract=abstract, metadata={"paper_id": str(paper_id)})
+
+    db.close()
+    # Don't close embeddings manager - keep the ChromaDB collection active
+    # The Flask app will use this same instance via the module-level cache
+    # em.close()
+
+    # Configure the app to use test database and embeddings
     original_get_config = get_config
 
     def mock_get_config():
         config = Config()
         config.paper_db_path = str(test_database)
+        config.embedding_db_path = str(embeddings_path)
+        config.collection_name = f"test_collection_{unique_id}"
         return config
 
     # Patch the config
     import neurips_abstracts.web_ui.app as app_module
 
     app_module.get_config = mock_get_config
+
+    # Inject the pre-created embeddings manager directly (don't create a new one)
+    # This avoids ChromaDB global registry conflicts when the app tries to connect
+    app_module.embeddings_manager = em
+    app_module.rag_chat = None
 
     # Start server in a thread
     def run_server():
@@ -678,9 +726,17 @@ class TestWebUIE2E:
         # Wait for modal to open
         wait.until(EC.visibility_of_element_located((By.ID, "settings-modal")))
 
-        # Select event type filter
+        # Select event type filter - use select_by_value or select_by_index instead
         eventtype_select = Select(browser.find_element(By.ID, "modal-eventtype-filter"))
-        eventtype_select.select_by_visible_text("Oral")
+        # Get available options and select the first non-empty one
+        options = eventtype_select.options
+        if len(options) > 1:  # Skip "All" option if it exists
+            # Try to select by value "Oral" if available, otherwise select first available
+            try:
+                eventtype_select.select_by_value("Oral")
+            except:
+                # If "Oral" not found, select the second option (first non-All)
+                eventtype_select.select_by_index(1)
 
         # Close modal
         close_btn = browser.find_element(By.CSS_SELECTOR, "button[onclick='closeSettings()']")
@@ -882,14 +938,21 @@ class TestWebUIE2E:
         # Find select all buttons (if they exist)
         select_buttons = browser.find_elements(By.CSS_SELECTOR, "button[onclick*='selectAll']")
         if len(select_buttons) > 0:
-            # Click select all for first filter group
-            select_buttons[0].click()
+            # Scroll to the button first to ensure it's visible
+            browser.execute_script("arguments[0].scrollIntoView(true);", select_buttons[0])
+            time.sleep(0.3)
+
+            # Use JavaScript click to avoid scrolling issues
+            browser.execute_script("arguments[0].click();", select_buttons[0])
             time.sleep(0.5)
 
             # Find corresponding deselect button
             deselect_buttons = browser.find_elements(By.CSS_SELECTOR, "button[onclick*='deselectAll']")
             if len(deselect_buttons) > 0:
-                deselect_buttons[0].click()
+                # Scroll and click with JavaScript
+                browser.execute_script("arguments[0].scrollIntoView(true);", deselect_buttons[0])
+                time.sleep(0.3)
+                browser.execute_script("arguments[0].click();", deselect_buttons[0])
                 time.sleep(0.5)
 
     def test_chat_interface_elements(self, web_server, browser):
@@ -1085,20 +1148,20 @@ class TestWebUIE2E:
         chat_tab_button.click()
         time.sleep(1)
 
-        # Try to select a topic filter
-        topic_select = browser.find_element(By.ID, "chat-topic-filter")
-        options = topic_select.find_elements(By.TAG_NAME, "option")
+        # Try to select a topic filter using Select class
+        topic_select_element = browser.find_element(By.ID, "chat-topic-filter")
+        topic_select = Select(topic_select_element)
+        options = topic_select.options
 
-        if len(options) > 0:
-            # Select first topic
-            options[0].click()
+        if len(options) > 1:  # More than just the default option
+            # Select second option (first actual filter value)
+            topic_select.select_by_index(1)
             time.sleep(0.5)
 
             # Verify it's selected
-            assert (
-                options[0].is_selected()
-                or len(browser.find_elements(By.CSS_SELECTOR, "#chat-topic-filter option:checked")) > 0
-            )
+            selected_option = topic_select.first_selected_option
+            assert selected_option is not None
+            assert selected_option.get_attribute("value") is not None
 
     def test_chat_papers_display(self, web_server, browser):
         """

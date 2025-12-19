@@ -445,7 +445,43 @@ class TestRAGChatIntegration:
         db = DatabaseManager(str(db_path))
         db.connect()
         db.create_tables()
-        db.close()
+
+        # Insert paper into database
+        cursor = db.connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO papers (uid, name, abstract, decision, topic, keywords)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                "Attention Mechanisms",
+                "This paper discusses attention mechanisms in neural networks.",
+                "Accept",
+                "Deep Learning",
+                "attention, neural networks",
+            ),
+        )
+
+        # Insert author
+        cursor.execute(
+            """
+            INSERT INTO authors (id, fullname)
+            VALUES (?, ?)
+            """,
+            (1, "Test Author"),
+        )
+
+        # Link paper to author
+        cursor.execute(
+            """
+            INSERT INTO paper_authors (paper_id, author_id, author_order)
+            VALUES (?, ?, ?)
+            """,
+            (1, 1, 0),
+        )
+
+        db.connection.commit()
 
         # Create RAG chat with configured settings
         chat = RAGChat(
@@ -465,6 +501,7 @@ class TestRAGChatIntegration:
         assert "attention" in result["response"].lower() or "Attention" in result["response"]
 
         em.close()
+        db.close()
 
     @requires_lm_studio
     def test_real_conversation(self, tmp_path):
@@ -498,7 +535,43 @@ class TestRAGChatIntegration:
         db = DatabaseManager(str(db_path))
         db.connect()
         db.create_tables()
-        db.close()
+
+        # Insert paper into database
+        cursor = db.connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO papers (uid, name, abstract, decision, topic, keywords)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                "Transformers",
+                "Transformers are a deep learning architecture based on attention.",
+                "Accept (oral)",
+                "Deep Learning",
+                "transformers, attention",
+            ),
+        )
+
+        # Insert author
+        cursor.execute(
+            """
+            INSERT INTO authors (id, fullname)
+            VALUES (?, ?)
+            """,
+            (1, "Vaswani et al."),
+        )
+
+        # Link paper to author
+        cursor.execute(
+            """
+            INSERT INTO paper_authors (paper_id, author_id, author_order)
+            VALUES (?, ?, ?)
+            """,
+            (1, 1, 0),
+        )
+
+        db.connection.commit()
 
         chat = RAGChat(
             em,
@@ -519,6 +592,7 @@ class TestRAGChatIntegration:
         assert len(chat.conversation_history) == 4
 
         em.close()
+        db.close()
 
     @requires_lm_studio
     def test_real_export(self, tmp_path):
@@ -551,7 +625,43 @@ class TestRAGChatIntegration:
         db = DatabaseManager(str(db_path))
         db.connect()
         db.create_tables()
-        db.close()
+
+        # Insert paper into database
+        cursor = db.connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO papers (uid, name, abstract, decision, topic, keywords)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                "ML Paper",
+                "Test abstract about machine learning.",
+                "Accept",
+                "ML",
+                "machine learning",
+            ),
+        )
+
+        # Insert author
+        cursor.execute(
+            """
+            INSERT INTO authors (id, fullname)
+            VALUES (?, ?)
+            """,
+            (1, "Author"),
+        )
+
+        # Link paper to author
+        cursor.execute(
+            """
+            INSERT INTO paper_authors (paper_id, author_id, author_order)
+            VALUES (?, ?, ?)
+            """,
+            (1, 1, 0),
+        )
+
+        db.connection.commit()
 
         chat = RAGChat(
             em,
@@ -574,6 +684,7 @@ class TestRAGChatIntegration:
         assert all("role" in msg and "content" in msg for msg in data)
 
         em.close()
+        db.close()
 
 
 class TestRAGChatQueryRewriting:
