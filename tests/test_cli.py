@@ -188,8 +188,8 @@ class TestCLI:
             db.create_tables()
             db.load_json_data(
                 [
-                    {"id": 1, "title": "Paper 1", "abstract": "Abstract 1", "decision": "Accept"},
-                    {"id": 2, "title": "Paper 2", "abstract": "Abstract 2", "decision": "Reject"},
+                    {"id": 1, "name": "Paper 1", "abstract": "Abstract 1", "decision": "Accept"},
+                    {"id": 2, "name": "Paper 2", "abstract": "Abstract 2", "decision": "Reject"},
                 ]
             )
 

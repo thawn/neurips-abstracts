@@ -11,6 +11,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator, ValidationError
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,6 +20,181 @@ class DatabaseError(Exception):
     """Exception raised for database operations."""
 
     pass
+
+
+class AuthorModel(BaseModel):
+    """
+    Pydantic model for author data validation.
+
+    Attributes
+    ----------
+    id : int
+        Unique author identifier.
+    fullname : str
+        Full name of the author.
+    url : str, optional
+        URL to author profile.
+    institution : str, optional
+        Author's institution.
+    """
+
+    id: int
+    fullname: str
+    url: Optional[str] = ""
+    institution: Optional[str] = ""
+
+    @field_validator("fullname")
+    @classmethod
+    def validate_fullname(cls, v: str) -> str:
+        """Ensure fullname is not empty."""
+        if not v or not v.strip():
+            raise ValueError("Author fullname cannot be empty")
+        return v.strip()
+
+
+class PaperModel(BaseModel):
+    """
+    Pydantic model for paper data validation.
+
+    Attributes
+    ----------
+    id : int
+        Unique paper identifier.
+    name : str
+        Paper title.
+    authors : list or str, optional
+        List of author objects or comma-separated string of author IDs.
+    abstract : str, optional
+        Paper abstract.
+    uid : str, optional
+        Unique identifier string.
+    topic : str, optional
+        Paper topic/category.
+    keywords : list or str, optional
+        List of keywords or comma-separated string.
+    decision : str, optional
+        Acceptance decision (e.g., "Accept (poster)").
+    session : str, optional
+        Conference session.
+    eventtype : str, optional
+        Type of event (e.g., "Poster", "Oral").
+    event_type : str, optional
+        Alternative event type field.
+    room_name : str, optional
+        Room location.
+    virtualsite_url : str, optional
+        Virtual site URL.
+    url : str, optional
+        General URL.
+    sourceid : int, optional
+        Source identifier.
+    sourceurl : str, optional
+        Source URL.
+    starttime : str, optional
+        Event start time.
+    endtime : str, optional
+        Event end time.
+    starttime2 : str, optional
+        Alternative start time.
+    endtime2 : str, optional
+        Alternative end time.
+    diversity_event : str, optional
+        Diversity event indicator.
+    paper_url : str, optional
+        Paper URL.
+    paper_pdf_url : str, optional
+        PDF URL.
+    children_url : str, optional
+        Children URL.
+    children : list, optional
+        Child events.
+    children_ids : list, optional
+        Child event IDs.
+    parent1 : str, optional
+        First parent.
+    parent2 : str, optional
+        Second parent.
+    parent2_id : str, optional
+        Second parent ID.
+    eventmedia : list, optional
+        Event media items.
+    show_in_schedule_overview : bool, optional
+        Schedule visibility flag.
+    visible : bool, optional
+        General visibility flag.
+    poster_position : str, optional
+        Poster position/number.
+    schedule_html : str, optional
+        Schedule HTML content.
+    latitude : float, optional
+        Location latitude.
+    longitude : float, optional
+        Location longitude.
+    related_events : list, optional
+        Related events.
+    related_events_ids : list, optional
+        Related event IDs.
+    """
+
+    id: int
+    name: str
+    authors: Optional[Union[List[Dict[str, Any]], str]] = ""
+    abstract: Optional[str] = ""
+    uid: Optional[str] = ""
+    topic: Optional[str] = ""
+    keywords: Optional[Union[List[str], str]] = ""
+    decision: Optional[str] = ""
+    session: Optional[str] = ""
+    eventtype: Optional[str] = ""
+    event_type: Optional[str] = ""
+    room_name: Optional[str] = ""
+    virtualsite_url: Optional[str] = ""
+    url: Optional[str] = None
+    sourceid: Optional[int] = None
+    sourceurl: Optional[str] = ""
+    starttime: Optional[str] = ""
+    endtime: Optional[str] = ""
+    starttime2: Optional[str] = None
+    endtime2: Optional[str] = None
+    diversity_event: Optional[Union[str, bool]] = None
+    paper_url: Optional[str] = ""
+    paper_pdf_url: Optional[str] = None
+    children_url: Optional[str] = None
+    children: Optional[List[Any]] = Field(default_factory=list)
+    children_ids: Optional[List[Any]] = Field(default_factory=list)
+    parent1: Optional[str] = ""
+    parent2: Optional[str] = None
+    parent2_id: Optional[str] = None
+    eventmedia: Optional[List[Any]] = Field(default_factory=list)
+    show_in_schedule_overview: Optional[bool] = False
+    visible: Optional[bool] = True
+    poster_position: Optional[str] = ""
+    schedule_html: Optional[str] = ""
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    related_events: Optional[List[Any]] = Field(default_factory=list)
+    related_events_ids: Optional[List[Any]] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="allow")  # Allow extra fields not in the model
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        """Ensure paper name is not empty."""
+        if not v or not v.strip():
+            raise ValueError("Paper name cannot be empty")
+        return v.strip()
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, v: Any) -> int:
+        """Ensure ID is a valid integer."""
+        if v is None:
+            raise ValueError("Paper ID cannot be None")
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            raise ValueError(f"Paper ID must be an integer, got {type(v).__name__}")
 
 
 class DatabaseManager:
@@ -322,18 +499,26 @@ class DatabaseManager:
         try:
             cursor = self.connection.cursor()
             inserted_count = 0
+            validation_errors = []
 
-            for record in records:
-                # Extract all fields from the NeurIPS JSON structure
-                paper_id = record.get("id")
-                if paper_id is not None:
-                    paper_id = int(paper_id)  # Convert to integer for INTEGER PRIMARY KEY
-                uid = record.get("uid", "")
-                name = record.get("name", "")
-                abstract = record.get("abstract", "")
+            for idx, record in enumerate(records):
+                try:
+                    # Validate record using Pydantic model
+                    paper = PaperModel(**record)
+                except ValidationError as e:
+                    error_msg = f"Validation error for record {idx}: {str(e)}"
+                    logger.warning(error_msg)
+                    validation_errors.append(error_msg)
+                    continue
+
+                # Extract validated fields
+                paper_id = paper.id
+                uid = paper.uid
+                name = paper.name
+                abstract = paper.abstract
 
                 # Handle authors (could be list of dicts or string)
-                authors_data = record.get("authors", "")
+                authors_data = paper.authors
                 authors_str = ""  # Store comma-separated author IDs
                 author_objects = []  # Store author objects for separate table
 
@@ -342,18 +527,22 @@ class DatabaseManager:
                     if authors_data and isinstance(authors_data[0], dict):
                         author_ids = []
                         for author_dict in authors_data:
-                            # Extract author information
-                            author_id = author_dict.get("id")
-                            if author_id:
-                                author_ids.append(str(author_id))
-                            author_objects.append(
-                                {
-                                    "id": author_id,
-                                    "fullname": author_dict.get("fullname") or author_dict.get("name", ""),
-                                    "url": author_dict.get("url", ""),
-                                    "institution": author_dict.get("institution", ""),
-                                }
-                            )
+                            try:
+                                # Validate author using Pydantic model
+                                author = AuthorModel(**author_dict)
+                                author_ids.append(str(author.id))
+                                author_objects.append(
+                                    {
+                                        "id": author.id,
+                                        "fullname": author.fullname,
+                                        "url": author.url,
+                                        "institution": author.institution,
+                                    }
+                                )
+                            except ValidationError as e:
+                                logger.warning(f"Author validation error in paper {paper_id}: {str(e)}")
+                                # Skip invalid author but continue with paper
+                                continue
                         # Store comma-separated author IDs
                         authors_str = ", ".join(author_ids)
                     else:
@@ -362,60 +551,63 @@ class DatabaseManager:
                 else:
                     authors_str = str(authors_data) if authors_data else ""
 
-                topic = record.get("topic", "")
+                topic = paper.topic
 
                 # Handle keywords (could be list or string)
-                keywords = record.get("keywords", "")
+                keywords = paper.keywords
                 if isinstance(keywords, list):
                     keywords = ", ".join(str(k) for k in keywords)
 
-                decision = record.get("decision", "")
-                session = record.get("session", "")
-                eventtype = record.get("eventtype", "")
-                event_type = record.get("event_type", "")
-                room_name = record.get("room_name", "")
-                virtualsite_url = record.get("virtualsite_url", "")
-                url = record.get("url")
-                sourceid = record.get("sourceid")
-                sourceurl = record.get("sourceurl", "")
-                starttime = record.get("starttime", "")
-                endtime = record.get("endtime", "")
-                starttime2 = record.get("starttime2")
-                endtime2 = record.get("endtime2")
-                diversity_event = record.get("diversity_event")
-                paper_url = record.get("paper_url", "")
-                paper_pdf_url = record.get("paper_pdf_url")
-                children_url = record.get("children_url")
+                decision = paper.decision
+                session = paper.session
+                eventtype = paper.eventtype
+                event_type = paper.event_type
+                room_name = paper.room_name
+                virtualsite_url = paper.virtualsite_url
+                url = paper.url
+                sourceid = paper.sourceid
+                sourceurl = paper.sourceurl
+                starttime = paper.starttime
+                endtime = paper.endtime
+                starttime2 = paper.starttime2
+                endtime2 = paper.endtime2
+                # Convert boolean diversity_event to string for database storage
+                diversity_event = (
+                    str(paper.diversity_event) if isinstance(paper.diversity_event, bool) else paper.diversity_event
+                )
+                paper_url = paper.paper_url
+                paper_pdf_url = paper.paper_pdf_url
+                children_url = paper.children_url
 
                 # Handle array fields
-                children = record.get("children", [])
+                children = paper.children
                 if isinstance(children, list):
                     children = json.dumps(children)
 
-                children_ids = record.get("children_ids", [])
+                children_ids = paper.children_ids
                 if isinstance(children_ids, list):
                     children_ids = json.dumps(children_ids)
 
-                parent1 = record.get("parent1", "")
-                parent2 = record.get("parent2")
-                parent2_id = record.get("parent2_id")
+                parent1 = paper.parent1
+                parent2 = paper.parent2
+                parent2_id = paper.parent2_id
 
-                eventmedia = record.get("eventmedia", [])
+                eventmedia = paper.eventmedia
                 if isinstance(eventmedia, list):
                     eventmedia = json.dumps(eventmedia)
 
-                show_in_schedule_overview = 1 if record.get("show_in_schedule_overview") else 0
-                visible = 1 if record.get("visible", True) else 0
-                poster_position = record.get("poster_position", "")
-                schedule_html = record.get("schedule_html", "")
-                latitude = record.get("latitude")
-                longitude = record.get("longitude")
+                show_in_schedule_overview = 1 if paper.show_in_schedule_overview else 0
+                visible = 1 if paper.visible else 0
+                poster_position = paper.poster_position
+                schedule_html = paper.schedule_html
+                latitude = paper.latitude
+                longitude = paper.longitude
 
-                related_events = record.get("related_events", [])
+                related_events = paper.related_events
                 if isinstance(related_events, list):
                     related_events = json.dumps(related_events)
 
-                related_events_ids = record.get("related_events_ids", [])
+                related_events_ids = paper.related_events_ids
                 if isinstance(related_events_ids, list):
                     related_events_ids = json.dumps(related_events_ids)
 
@@ -509,6 +701,12 @@ class DatabaseManager:
                     continue
 
             self.connection.commit()
+
+            # Log summary
+            if validation_errors:
+                logger.warning(f"Encountered {len(validation_errors)} validation errors")
+                logger.debug(f"Validation errors: {validation_errors}")
+
             logger.info(f"Successfully inserted {inserted_count} records")
             return inserted_count
 
