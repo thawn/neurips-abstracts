@@ -106,9 +106,28 @@ class TestConfig:
             if var in os.environ:
                 del os.environ[var]
 
-    def test_config_defaults(self):
+    def test_config_defaults(self, monkeypatch):
         """Test default configuration values."""
-        config = Config()
+        # Clear all environment variables that might override defaults
+        env_vars_to_clear = [
+            "CHAT_MODEL",
+            "EMBEDDING_MODEL",
+            "LLM_BACKEND_URL",
+            "LLM_BACKEND_AUTH_TOKEN",
+            "EMBEDDING_DB_PATH",
+            "PAPER_DB_PATH",
+            "COLLECTION_NAME",
+            "MAX_CONTEXT_PAPERS",
+            "CHAT_TEMPERATURE",
+            "CHAT_MAX_TOKENS",
+            "DATA_DIR",
+        ]
+        for var in env_vars_to_clear:
+            monkeypatch.delenv(var, raising=False)
+
+        # Use .env.example which has the default values
+        env_example = Path(__file__).parent.parent / ".env.example"
+        config = Config(env_path=env_example)
 
         assert config.data_dir == "data"
         assert config.chat_model == "diffbot-small-xl-2508"
