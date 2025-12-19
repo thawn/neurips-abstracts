@@ -556,9 +556,26 @@ class TestWebUIE2E:
         base_url, _ = web_server
         browser.get(base_url)
 
+        # Open search settings modal
+        wait = WebDriverWait(browser, 10)
+        settings_btn = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "button[onclick='openSearchSettings()']"))
+        )
+        settings_btn.click()
+
+        # Wait for modal to open
+        wait.until(EC.visibility_of_element_located((By.ID, "settings-modal")))
+
         # Change limit to 10 (actual available value)
         limit_select = Select(browser.find_element(By.ID, "limit-select"))
         limit_select.select_by_value("10")
+
+        # Close modal
+        close_btn = browser.find_element(By.CSS_SELECTOR, "button[onclick='closeSettings()']")
+        close_btn.click()
+
+        # Wait for modal to close
+        wait.until(EC.invisibility_of_element_located((By.ID, "settings-modal")))
 
         # Perform search
         search_input = browser.find_element(By.ID, "search-input")
@@ -592,14 +609,31 @@ class TestWebUIE2E:
         # Wait for page to load and filters to populate
         time.sleep(1)
 
+        # Open search settings modal
+        wait = WebDriverWait(browser, 10)
+        settings_btn = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "button[onclick='openSearchSettings()']"))
+        )
+        settings_btn.click()
+
+        # Wait for modal to open
+        wait.until(EC.visibility_of_element_located((By.ID, "settings-modal")))
+
         # Select a topic filter (e.g., "Natural Language Processing")
-        topic_select = Select(browser.find_element(By.ID, "topic-filter"))
+        topic_select = Select(browser.find_element(By.ID, "modal-topic-filter"))
         try:
             topic_select.select_by_visible_text("Natural Language Processing")
         except NoSuchElementException:
             # If exact text not found, select first available option
             if len(topic_select.options) > 0:
                 topic_select.select_by_index(0)
+
+        # Close modal
+        close_btn = browser.find_element(By.CSS_SELECTOR, "button[onclick='closeSettings()']")
+        close_btn.click()
+
+        # Wait for modal to close
+        wait.until(EC.invisibility_of_element_located((By.ID, "settings-modal")))
 
         # Perform search
         search_input = browser.find_element(By.ID, "search-input")
@@ -634,9 +668,26 @@ class TestWebUIE2E:
         # Wait for page to load
         time.sleep(1)
 
+        # Open search settings modal
+        wait = WebDriverWait(browser, 10)
+        settings_btn = wait.until(
+            EC.element_to_be_clickable((By.CSS_SELECTOR, "button[onclick='openSearchSettings()']"))
+        )
+        settings_btn.click()
+
+        # Wait for modal to open
+        wait.until(EC.visibility_of_element_located((By.ID, "settings-modal")))
+
         # Select event type filter
-        eventtype_select = Select(browser.find_element(By.ID, "eventtype-filter"))
+        eventtype_select = Select(browser.find_element(By.ID, "modal-eventtype-filter"))
         eventtype_select.select_by_visible_text("Oral")
+
+        # Close modal
+        close_btn = browser.find_element(By.CSS_SELECTOR, "button[onclick='closeSettings()']")
+        close_btn.click()
+
+        # Wait for modal to close
+        wait.until(EC.invisibility_of_element_located((By.ID, "settings-modal")))
 
         # Perform search
         search_input = browser.find_element(By.ID, "search-input")

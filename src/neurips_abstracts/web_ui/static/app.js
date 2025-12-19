@@ -37,7 +37,154 @@ document.addEventListener('DOMContentLoaded', function () {
     loadStats();
     loadFilterOptions();
     loadPriorities();
+
+    // Close modal when clicking outside of it
+    document.getElementById('settings-modal').addEventListener('click', function (event) {
+        if (event.target === this) {
+            closeSettings();
+        }
+    });
+
+    // Close modal on Escape key
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+            const modal = document.getElementById('settings-modal');
+            if (!modal.classList.contains('hidden')) {
+                closeSettings();
+            }
+        }
+    });
 });
+
+// Open search settings modal
+function openSearchSettings() {
+    // Sync modal filters with search filters
+    syncFiltersToModal('search');
+
+    // Update modal title
+    document.getElementById('modal-title').textContent = 'Search Settings';
+
+    // Show search-specific settings, hide chat-specific
+    document.getElementById('search-settings-section').classList.remove('hidden');
+    document.getElementById('chat-settings-section').classList.add('hidden');
+
+    // Open modal
+    const modal = document.getElementById('settings-modal');
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+
+    // Store context
+    modal.dataset.context = 'search';
+}
+
+// Open chat settings modal
+function openChatSettings() {
+    // Sync modal filters with chat filters
+    syncFiltersToModal('chat');
+
+    // Update modal title
+    document.getElementById('modal-title').textContent = 'Chat Settings';
+
+    // Show chat-specific settings, hide search-specific
+    document.getElementById('search-settings-section').classList.add('hidden');
+    document.getElementById('chat-settings-section').classList.remove('hidden');
+
+    // Open modal
+    const modal = document.getElementById('settings-modal');
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+
+    // Store context
+    modal.dataset.context = 'chat';
+}
+
+// Close settings modal
+function closeSettings() {
+    const modal = document.getElementById('settings-modal');
+    const context = modal.dataset.context;
+
+    // Sync modal filters back to the appropriate context
+    if (context) {
+        syncFiltersFromModal(context);
+    }
+
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+// Sync filters from search/chat to modal
+function syncFiltersToModal(context) {
+    const prefix = context === 'search' ? '' : 'chat-';
+
+    // Sync sessions
+    const sessionFilter = document.getElementById(prefix + 'session-filter');
+    const modalSessionFilter = document.getElementById('modal-session-filter');
+    if (sessionFilter && modalSessionFilter) {
+        // Copy options if modal is empty
+        if (modalSessionFilter.options.length === 0) {
+            modalSessionFilter.innerHTML = sessionFilter.innerHTML;
+        }
+        // Copy selections
+        Array.from(modalSessionFilter.options).forEach((opt, idx) => {
+            opt.selected = sessionFilter.options[idx]?.selected || false;
+        });
+    }
+
+    // Sync topics
+    const topicFilter = document.getElementById(prefix + 'topic-filter');
+    const modalTopicFilter = document.getElementById('modal-topic-filter');
+    if (topicFilter && modalTopicFilter) {
+        // Copy options if modal is empty
+        if (modalTopicFilter.options.length === 0) {
+            modalTopicFilter.innerHTML = topicFilter.innerHTML;
+        }
+        // Copy selections
+        Array.from(modalTopicFilter.options).forEach((opt, idx) => {
+            opt.selected = topicFilter.options[idx]?.selected || false;
+        });
+    }
+
+    // Sync event type
+    const eventtypeFilter = document.getElementById(prefix + 'eventtype-filter');
+    const modalEventtypeFilter = document.getElementById('modal-eventtype-filter');
+    if (eventtypeFilter && modalEventtypeFilter) {
+        // Copy options if modal is empty
+        if (modalEventtypeFilter.options.length === 0) {
+            modalEventtypeFilter.innerHTML = eventtypeFilter.innerHTML;
+        }
+        modalEventtypeFilter.value = eventtypeFilter.value;
+    }
+}
+
+// Sync filters from modal back to search/chat
+function syncFiltersFromModal(context) {
+    const prefix = context === 'search' ? '' : 'chat-';
+
+    // Sync sessions
+    const sessionFilter = document.getElementById(prefix + 'session-filter');
+    const modalSessionFilter = document.getElementById('modal-session-filter');
+    if (sessionFilter && modalSessionFilter) {
+        Array.from(sessionFilter.options).forEach((opt, idx) => {
+            opt.selected = modalSessionFilter.options[idx]?.selected || false;
+        });
+    }
+
+    // Sync topics
+    const topicFilter = document.getElementById(prefix + 'topic-filter');
+    const modalTopicFilter = document.getElementById('modal-topic-filter');
+    if (topicFilter && modalTopicFilter) {
+        Array.from(topicFilter.options).forEach((opt, idx) => {
+            opt.selected = modalTopicFilter.options[idx]?.selected || false;
+        });
+    }
+
+    // Sync event type
+    const eventtypeFilter = document.getElementById(prefix + 'eventtype-filter');
+    const modalEventtypeFilter = document.getElementById('modal-eventtype-filter');
+    if (eventtypeFilter && modalEventtypeFilter) {
+        eventtypeFilter.value = modalEventtypeFilter.value;
+    }
+}
 
 // Load priorities from localStorage
 function loadPriorities() {
