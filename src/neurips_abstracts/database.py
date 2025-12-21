@@ -196,6 +196,8 @@ class DatabaseManager:
                     related_events TEXT,
                     related_events_ids TEXT,
                     raw_data TEXT,
+                    year INTEGER,
+                    conference TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """
@@ -241,6 +243,20 @@ class DatabaseManager:
                 """
                 CREATE INDEX IF NOT EXISTS idx_session 
                 ON papers(session)
+            """
+            )
+
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_year 
+                ON papers(year)
+            """
+            )
+
+            cursor.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_conference 
+                ON papers(conference)
             """
             )
 
@@ -463,6 +479,10 @@ class DatabaseManager:
                 if isinstance(related_events_ids, list):
                     related_events_ids = json.dumps(related_events_ids)
 
+                # Extract year and conference fields
+                year = paper.year
+                conference = paper.conference
+
                 # Store raw JSON for full data preservation
                 raw_data = json.dumps(record, ensure_ascii=False)
 
@@ -476,8 +496,9 @@ class DatabaseManager:
                          starttime, endtime, starttime2, endtime2, diversity_event, paper_url, 
                          paper_pdf_url, children_url, children, children_ids, parent1, parent2, 
                          parent2_id, eventmedia, show_in_schedule_overview, visible, poster_position, 
-                         schedule_html, latitude, longitude, related_events, related_events_ids, raw_data)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         schedule_html, latitude, longitude, related_events, related_events_ids, 
+                         year, conference, raw_data)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         (
                             paper_id,
@@ -518,6 +539,8 @@ class DatabaseManager:
                             longitude,
                             related_events,
                             related_events_ids,
+                            year,
+                            conference,
                             raw_data,
                         ),
                     )

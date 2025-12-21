@@ -152,6 +152,32 @@ class TestLightweightPaper:
         )
         assert len(paper.authors) == 2
 
+    def test_year_and_conference_optional(self):
+        """Test that year and conference fields are optional."""
+        paper = LightweightPaper(
+            title="Test Paper",
+            authors=["John Doe"],
+            abstract="Abstract",
+            session="Session",
+            poster_position="A1",
+        )
+        assert paper.year is None
+        assert paper.conference is None
+
+    def test_year_and_conference_with_values(self):
+        """Test that year and conference fields can be set."""
+        paper = LightweightPaper(
+            title="Test Paper",
+            authors=["John Doe"],
+            abstract="Abstract",
+            session="Session",
+            poster_position="A1",
+            year=2025,
+            conference="NeurIPS",
+        )
+        assert paper.year == 2025
+        assert paper.conference == "NeurIPS"
+
 
 # ============================================================================
 # Full Schema Model Tests
@@ -198,11 +224,25 @@ class TestPaperModel:
             session="Test Session",
             decision="Accept (poster)",
             keywords=["ML", "AI"],
+            year=2025,
+            conference="NeurIPS",
         )
         assert paper.id == 1
         assert paper.name == "Test Paper"
         assert len(paper.authors) == 1
         assert paper.decision == "Accept (poster)"
+        assert paper.year == 2025
+        assert paper.conference == "NeurIPS"
+
+    def test_year_and_conference_fields(self):
+        """Test year and conference fields are optional."""
+        paper = PaperModel(id=1, name="Test Paper")
+        assert paper.year is None
+        assert paper.conference == ""
+
+        paper_with_year = PaperModel(id=2, name="Paper 2", year=2024, conference="ML4PS")
+        assert paper_with_year.year == 2024
+        assert paper_with_year.conference == "ML4PS"
 
     def test_empty_name_raises_error(self):
         """Test that empty name raises validation error."""

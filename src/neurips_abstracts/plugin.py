@@ -325,6 +325,8 @@ def convert_lightweight_to_neurips_schema(
             "longitude": None,
             "related_events": [],
             "related_events_ids": [],
+            "year": paper.get("year"),
+            "conference": paper.get("conference", ""),
         }
 
         results.append(neurips_paper)
@@ -557,6 +559,10 @@ class LightweightPaper(BaseModel):
         End time
     award : str
         Award name (e.g., "Best Paper Award")
+    year : int
+        Conference year (e.g., 2025)
+    conference : str
+        Conference name (e.g., "NeurIPS", "ML4PS")
     """
 
     # Required fields
@@ -576,6 +582,8 @@ class LightweightPaper(BaseModel):
     starttime: Optional[str] = None
     endtime: Optional[str] = None
     award: Optional[str] = None
+    year: Optional[int] = None
+    conference: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")  # Allow extra fields
 
@@ -774,6 +782,10 @@ class PaperModel(BaseModel):
         Related events.
     related_events_ids : list, optional
         Related event IDs.
+    year : int, optional
+        Conference year (e.g., 2025).
+    conference : str, optional
+        Conference name (e.g., "NeurIPS", "ML4PS").
     """
 
     id: int
@@ -814,6 +826,8 @@ class PaperModel(BaseModel):
     longitude: Optional[float] = None
     related_events: Optional[List[Any]] = Field(default_factory=list)
     related_events_ids: Optional[List[Any]] = Field(default_factory=list)
+    year: Optional[int] = None
+    conference: Optional[str] = ""
 
     model_config = ConfigDict(extra="allow")  # Allow extra fields not in the model
 
