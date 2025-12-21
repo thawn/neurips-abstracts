@@ -9,7 +9,7 @@ This guide covers common usage patterns for the NeurIPS Abstracts package.
 Download papers for a specific year:
 
 ```bash
-neurips-abstracts download --year 2025 --db-path neurips_2025.db
+uv run neurips-abstracts download --year 2025 --db-path neurips_2025.db
 ```
 
 Options:
@@ -22,7 +22,7 @@ Options:
 Generate vector embeddings for semantic search:
 
 ```bash
-neurips-abstracts create-embeddings --db-path neurips_2025.db
+uv run neurips-abstracts create-embeddings --db-path neurips_2025.db
 ```
 
 Options:
@@ -37,13 +37,13 @@ Search papers by keyword or semantic similarity:
 
 ```bash
 # Simple search
-neurips-abstracts search "transformer architecture" --db-path neurips_2025.db
+uv run neurips-abstracts search "transformer architecture" --db-path neurips_2025.db
 
 # Limit results
-neurips-abstracts search "reinforcement learning" --db-path neurips_2025.db --limit 10
+uv run neurips-abstracts search "reinforcement learning" --db-path neurips_2025.db --limit 10
 
 # Filter by year
-neurips-abstracts search "neural networks" --db-path neurips_2025.db --year 2025
+uv run neurips-abstracts search "neural networks" --db-path neurips_2025.db --year 2025
 ```
 
 ### 4. Chat with Papers (RAG)
@@ -51,7 +51,7 @@ neurips-abstracts search "neural networks" --db-path neurips_2025.db --year 2025
 Interactive chat interface powered by RAG:
 
 ```bash
-neurips-abstracts chat --db-path neurips_2025.db
+uv run neurips-abstracts chat --db-path neurips_2025.db
 ```
 
 In the chat interface:
@@ -167,8 +167,8 @@ Process multiple years:
 ```bash
 #!/bin/bash
 for year in 2023 2024 2025; do
-    neurips-abstracts download --year $year --db-path neurips_${year}.db
-    neurips-abstracts create-embeddings --db-path neurips_${year}.db
+    uv run neurips-abstracts download --year $year --db-path neurips_${year}.db
+    uv run neurips-abstracts create-embeddings --db-path neurips_${year}.db
 done
 ```
 

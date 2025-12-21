@@ -17,37 +17,41 @@ Welcome to the documentation for the NeurIPS Abstracts package! This package pro
 Install the package:
 
 ```bash
-pip install -e .
+# Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install the package with all dependencies
+uv sync --all-extras
 ```
 
 Download abstracts for NeurIPS 2025:
 
 ```bash
-neurips-abstracts download --year 2025 --db-path neurips_2025.db
+uv run neurips-abstracts download --year 2025 --db-path neurips_2025.db
 ```
 
 Or download from a workshop using plugins:
 
 ```bash
-neurips-abstracts download --plugin ml4ps --year 2025 --db-path ml4ps.db
+uv run neurips-abstracts download --plugin ml4ps --year 2025 --db-path ml4ps.db
 ```
 
 Create embeddings for semantic search:
 
 ```bash
-neurips-abstracts create-embeddings --db-path neurips_2025.db
+uv run neurips-abstracts create-embeddings --db-path neurips_2025.db
 ```
 
 Search papers:
 
 ```bash
-neurips-abstracts search "machine learning" --db-path neurips_2025.db
+uv run neurips-abstracts search "machine learning" --db-path neurips_2025.db
 ```
 
 Chat with papers using RAG:
 
 ```bash
-neurips-abstracts chat --db-path neurips_2025.db
+uv run neurips-abstracts chat --db-path neurips_2025.db
 ```
 
 ## Documentation Contents

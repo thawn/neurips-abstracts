@@ -16,7 +16,7 @@ The plugin system provides two APIs:
 Official NeurIPS conference data downloader.
 
 ```bash
-neurips-abstracts download --plugin neurips --year 2025 --db-path neurips.db
+uv run neurips-abstracts download --plugin neurips --year 2025 --db-path neurips.db
 ```
 
 - **Years**: 2013-2025
@@ -28,7 +28,7 @@ neurips-abstracts download --plugin neurips --year 2025 --db-path neurips.db
 ML4PS (Machine Learning for Physical Sciences) workshop downloader.
 
 ```bash
-neurips-abstracts download --plugin ml4ps --year 2025 --db-path ml4ps.db
+uv run neurips-abstracts download --plugin ml4ps --year 2025 --db-path ml4ps.db
 ```
 
 - **Years**: 2025
@@ -40,17 +40,17 @@ neurips-abstracts download --plugin ml4ps --year 2025 --db-path ml4ps.db
 ### List Available Plugins
 
 ```bash
-neurips-abstracts download --list-plugins
+uv run neurips-abstracts download --list-plugins
 ```
 
 ### Download with a Plugin
 
 ```bash
 # Basic usage
-neurips-abstracts download --plugin ml4ps --year 2025 --db-path output.db
+uv run neurips-abstracts download --plugin ml4ps --year 2025 --db-path output.db
 
 # With options
-neurips-abstracts download \
+uv run neurips-abstracts download \
     --plugin ml4ps \
     --year 2025 \
     --db-path ml4ps_2025.db \
@@ -181,7 +181,7 @@ _register()
 from my_workshop_plugin import MyWorkshopPlugin
 
 # Or use via CLI
-# neurips-abstracts download --plugin myworkshop --year 2025 --db-path workshop.db
+# uv run neurips-abstracts download --plugin myworkshop --year 2025 --db-path workshop.db
 ```
 
 #### Flexible Author Format
@@ -359,7 +359,7 @@ Or set `PYTHONPATH`:
 
 ```bash
 export PYTHONPATH=/path/to/plugins:$PYTHONPATH
-neurips-abstracts download --plugin myplugin --year 2025
+uv run neurips-abstracts download --plugin myplugin --year 2025
 ```
 
 ## Testing Your Plugin

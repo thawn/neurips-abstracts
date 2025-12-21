@@ -318,7 +318,7 @@ See `CLI_REFERENCE.md` for complete CLI documentation and examples.
 
 1. Install [LM Studio](https://lmstudio.ai/) and load the `text-embedding-qwen3-embedding-4b` model
 2. Start the LM Studio server (default: http://localhost:1234)
-3. Install ChromaDB: `pip install chromadb`
+3. ChromaDB is already included when you run `uv sync --all-extras` or `uv sync`
 
 ### Generate Embeddings
 
@@ -457,47 +457,49 @@ db = DatabaseManager("data/neurips.db")
 git clone https://github.com/yourusername/neurips-abstracts.git
 cd neurips-abstracts
 
-# Create a virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Install uv if you haven't already
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install in development mode with dev dependencies
-pip install -e ".[dev]"
+# Install in development mode with all dependencies
+uv sync --all-extras
+
+# Activate the virtual environment
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 ```
 
 ### Running Tests
 
 ```bash
 # Run all tests (excluding slow tests by default)
-pytest
+uv run pytest
 
 # Run with coverage report
-pytest --cov=neurips_abstracts --cov-report=html
+uv run pytest --cov=neurips_abstracts --cov-report=html
 
 # Run specific test file
-pytest tests/test_downloader.py
+uv run pytest tests/test_downloader.py
 
 # Run specific test
-pytest tests/test_database.py::TestDatabaseManager::test_connect
+uv run pytest tests/test_database.py::TestDatabaseManager::test_connect
 
 # Run only slow tests (requires LM Studio running)
-pytest -m slow
+uv run pytest -m slow
 
 # Run all tests including slow ones
-pytest -m ""
+uv run pytest -m ""
 
 # Run end-to-end tests (requires Chrome or Firefox browser)
-pytest -m e2e
+uv run pytest -m e2e
 
 # Run E2E tests with verbose output
-pytest tests/test_web_e2e.py -v -m e2e
+uv run pytest tests/test_web_e2e.py -v -m e2e
 
 # Run E2E tests with Firefox instead of Chrome
-E2E_BROWSER=firefox pytest tests/test_web_e2e.py -v -m e2e
+E2E_BROWSER=firefox uv run pytest tests/test_web_e2e.py -v -m e2e
 ```
 
 **Note:**
-- Tests requiring LM Studio are marked as `slow` and skipped by default. To run them, use `pytest -m slow` (requires LM Studio running with a chat model loaded).
+- Tests requiring LM Studio are marked as `slow` and skipped by default. To run them, use `uv run pytest -m slow` (requires LM Studio running with a chat model loaded).
 - End-to-end tests are marked as `e2e` and require either Chrome or Firefox browser. These tests use Selenium to automate browser interactions and verify the web UI works correctly. By default, Chrome is tried first, then Firefox. You can specify a browser with the `E2E_BROWSER` environment variable.
 
 ### Code Structure

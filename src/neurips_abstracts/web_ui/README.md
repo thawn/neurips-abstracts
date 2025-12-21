@@ -8,9 +8,9 @@ The web UI requires Flask and Flask-CORS. Install them using:
 
 ```bash
 # Install with web UI dependencies
-pip install neurips-abstracts[web]
+uv sync --extra web
 
-# Or install Flask manually
+# Or install Flask manually if not using uv
 pip install flask flask-cors
 ```
 
@@ -22,16 +22,16 @@ Start the web interface using the new CLI command:
 
 ```bash
 # Start with defaults (127.0.0.1:5000)
-neurips-abstracts web-ui
+uv run neurips-abstracts web-ui
 
 # Specify host and port
-neurips-abstracts web-ui --host 0.0.0.0 --port 8080
+uv run neurips-abstracts web-ui --host 0.0.0.0 --port 8080
 
 # Enable debug mode
-neurips-abstracts web-ui --debug
+uv run neurips-abstracts web-ui --debug
 
 # Get help
-neurips-abstracts web-ui --help
+uv run neurips-abstracts web-ui --help
 ```
 
 ### Programmatic Usage
@@ -121,8 +121,8 @@ pytest tests/test_web.py -v
 The web UI is fully integrated into the package:
 
 1. **Module Location**: `src/neurips_abstracts/web_ui/`
-2. **CLI Command**: `neurips-abstracts web-ui`
-3. **Optional Dependency**: Install with `pip install neurips-abstracts[web]`
+2. **CLI Command**: `uv run neurips-abstracts web-ui`
+3. **Optional Dependency**: Install with `uv sync --extra web`
 4. **Test Coverage**: 18 comprehensive tests
 
 ## Migration from Standalone
@@ -130,7 +130,7 @@ The web UI is fully integrated into the package:
 If you were using the standalone `web/` directory before:
 
 - **Old**: `cd web && python app.py`
-- **New**: `neurips-abstracts web-ui`
+- **New**: `uv run neurips-abstracts web-ui`
 
 The functionality is identical, but now it's properly integrated into the package structure.
 
@@ -142,9 +142,9 @@ If Flask is not installed, you'll see a helpful error message:
 ❌ Web UI dependencies not installed!
 
 The web UI requires Flask. Install it with:
-  pip install neurips-abstracts[web]
+  uv sync --extra web
 
-Or install Flask manually:
+Or install Flask manually if not using uv:
   pip install flask flask-cors
 ```
 

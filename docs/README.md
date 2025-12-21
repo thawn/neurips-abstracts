@@ -9,10 +9,10 @@ This directory contains the Sphinx documentation for the NeurIPS Abstracts packa
 Install the documentation dependencies:
 
 ```bash
-pip install -e ".[docs]"
+uv sync --extra docs
 ```
 
-Or install them manually:
+Or install them manually if not using uv:
 
 ```bash
 pip install sphinx sphinx-rtd-theme myst-parser sphinx-autodoc-typehints linkify-it-py
@@ -22,7 +22,7 @@ pip install sphinx sphinx-rtd-theme myst-parser sphinx-autodoc-typehints linkify
 
 ```bash
 cd docs
-make html
+uv run make html
 ```
 
 The generated HTML documentation will be in `_build/html/`. Open `_build/html/index.html` in your browser.
@@ -161,7 +161,7 @@ Warnings about duplicate IDs are expected when combining manual and auto-generat
 If you see import errors, ensure all dependencies are installed:
 
 ```bash
-pip install -e ".[docs]"
+uv sync --extra docs
 ```
 
 ### Clean Build
@@ -170,7 +170,7 @@ If you encounter issues, try a clean rebuild:
 
 ```bash
 make clean
-make html
+uv run make html
 ```
 
 ## Resources
