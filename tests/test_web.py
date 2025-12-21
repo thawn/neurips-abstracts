@@ -143,7 +143,7 @@ class TestWebInterface:
         """Test that the main page loads."""
         response = client.get("/")
         assert response.status_code == 200
-        assert b"NeurIPS Abstracts Explorer" in response.data
+        assert b"Abstracts Explorer" in response.data
 
     def test_stats_endpoint_no_db(self, client):
         """Test stats endpoint when database doesn't exist."""
@@ -342,11 +342,11 @@ class TestDatabaseSearchIntegration:
         """
         Test that search_papers rejects invalid parameters.
 
-        This ensures we don't accidentally pass 'title' or 'abstract'
-        parameters that don't exist.
+        This ensures we don't accidentally pass invalid parameters
+        that don't exist in the function signature.
         """
         with test_db:
-            # This should raise TypeError if we try to pass invalid params
+            # These should raise TypeError if we try to pass invalid params
             with pytest.raises(TypeError):
                 test_db.search_papers(title="test")
 
@@ -354,7 +354,7 @@ class TestDatabaseSearchIntegration:
                 test_db.search_papers(abstract="test")
 
             with pytest.raises(TypeError):
-                test_db.search_papers(year=2025)
+                test_db.search_papers(invalid_param="test")
 
     def test_search_papers_valid_params_only(self, test_db):
         """Test that only valid parameters work."""

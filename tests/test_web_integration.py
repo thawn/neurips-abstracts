@@ -196,7 +196,7 @@ class TestWebUIIntegration:
 
         response = requests.get(base_url, timeout=5)
         assert response.status_code == 200
-        assert b"NeurIPS Abstracts Explorer" in response.content
+        assert b"Abstracts Explorer" in response.content
 
     def test_static_files_served(self, web_server):
         """Test that static files are served correctly."""
