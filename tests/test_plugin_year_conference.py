@@ -5,7 +5,7 @@ Tests for year and conference fields in plugins.
 import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, Mock
 from neurips_abstracts.plugins.neurips_downloader import NeurIPSDownloaderPlugin
 from neurips_abstracts.plugins.ml4ps_downloader import ML4PSDownloaderPlugin
 from neurips_abstracts.database import DatabaseManager
@@ -14,11 +14,12 @@ from neurips_abstracts.database import DatabaseManager
 class TestNeurIPSPluginYearConference:
     """Test that NeurIPS plugin sets year and conference fields."""
 
-    @patch("neurips_abstracts.plugins.neurips_downloader.download_neurips_data")
-    def test_neurips_plugin_adds_year_and_conference(self, mock_download):
+    @patch("neurips_abstracts.plugins.json_conference_downloader.requests.get")
+    def test_neurips_plugin_adds_year_and_conference(self, mock_get):
         """Test that NeurIPS plugin adds year and conference to each paper."""
-        # Mock the download_neurips_data to return test data
-        mock_download.return_value = {
+        # Mock the requests.get to return test data
+        mock_response = Mock()
+        mock_response.json.return_value = {
             "count": 2,
             "next": None,
             "previous": None,
@@ -35,6 +36,7 @@ class TestNeurIPSPluginYearConference:
                 },
             ],
         }
+        mock_get.return_value = mock_response
 
         plugin = NeurIPSDownloaderPlugin()
         data = plugin.download(year=2024)
@@ -47,11 +49,12 @@ class TestNeurIPSPluginYearConference:
             assert paper["year"] == 2024
             assert paper["conference"] == "NeurIPS"
 
-    @patch("neurips_abstracts.plugins.neurips_downloader.download_neurips_data")
-    def test_neurips_plugin_preserves_existing_fields(self, mock_download):
+    @patch("neurips_abstracts.plugins.json_conference_downloader.requests.get")
+    def test_neurips_plugin_preserves_existing_fields(self, mock_get):
         """Test that NeurIPS plugin preserves existing paper fields."""
-        # Mock the download_neurips_data to return test data with existing fields
-        mock_download.return_value = {
+        # Mock the requests.get to return test data with existing fields
+        mock_response = Mock()
+        mock_response.json.return_value = {
             "count": 1,
             "next": None,
             "previous": None,
@@ -65,6 +68,7 @@ class TestNeurIPSPluginYearConference:
                 },
             ],
         }
+        mock_get.return_value = mock_response
 
         plugin = NeurIPSDownloaderPlugin()
         data = plugin.download(year=2025)
@@ -143,11 +147,12 @@ class TestML4PSPluginYearConference:
 class TestDatabaseYearConferenceIntegration:
     """Test that year and conference fields are properly stored in the database."""
 
-    @patch("neurips_abstracts.plugins.neurips_downloader.download_neurips_data")
-    def test_neurips_year_conference_in_database(self, mock_download):
+    @patch("neurips_abstracts.plugins.json_conference_downloader.requests.get")
+    def test_neurips_year_conference_in_database(self, mock_get):
         """Test that year and conference are stored in database from NeurIPS plugin."""
-        # Mock the download_neurips_data to return test data
-        mock_download.return_value = {
+        # Mock the requests.get to return test data
+        mock_response = Mock()
+        mock_response.json.return_value = {
             "count": 2,
             "next": None,
             "previous": None,
@@ -172,6 +177,7 @@ class TestDatabaseYearConferenceIntegration:
                 },
             ],
         }
+        mock_get.return_value = mock_response
 
         plugin = NeurIPSDownloaderPlugin()
         data = plugin.download(year=2024)

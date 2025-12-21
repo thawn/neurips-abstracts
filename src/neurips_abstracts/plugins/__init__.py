@@ -5,6 +5,7 @@ Download Plugins
 This module provides downloadable plugin implementations for different data sources.
 
 Available plugins:
+- ICLRDownloaderPlugin: Official ICLR conference data
 - ML4PSDownloaderPlugin: ML4PS workshop data
 - NeurIPSDownloaderPlugin: Official NeurIPS conference data
 
@@ -38,6 +39,7 @@ from neurips_abstracts.plugin import (
 )
 
 # Import actual plugin implementations
+from .iclr_downloader import ICLRDownloaderPlugin
 from .ml4ps_downloader import ML4PSDownloaderPlugin
 from .neurips_downloader import NeurIPSDownloaderPlugin
 
@@ -65,6 +67,7 @@ __all__ = [
     "validate_paper",
     "validate_papers",
     # Plugin implementations
+    "ICLRDownloaderPlugin",
     "ML4PSDownloaderPlugin",
     "NeurIPSDownloaderPlugin",
 ]
