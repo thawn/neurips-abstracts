@@ -132,6 +132,7 @@ class DatabaseManager:
                     fullname TEXT NOT NULL,
                     url TEXT,
                     institution TEXT,
+                    original_id TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """
@@ -378,13 +379,27 @@ class DatabaseManager:
                             try:
                                 # Validate author using Pydantic model
                                 author = AuthorModel(**author_dict)
-                                author_ids.append(str(author.id))
+                                
+                                # Store original ID from source data
+                                original_id = str(author.id) if author.id else None
+                                
+                                # Generate hash-based ID for consistency across conferences
+                                # This prevents ID collisions between different conferences
+                                hash_id = abs(hash(author.fullname.lower())) % (10**9)
+                                
+                                author_ids.append(str(hash_id))
+                                
+                                # Check if original_id was explicitly provided (for lightweight API)
+                                if 'original_id' in author_dict and author_dict['original_id'] is not None:
+                                    original_id = str(author_dict['original_id'])
+                                
                                 author_objects.append(
                                     {
-                                        "id": author.id,
+                                        "id": hash_id,
                                         "fullname": author.fullname,
                                         "url": author.url,
                                         "institution": author.institution,
+                                        "original_id": original_id,
                                     }
                                 )
                             except ValidationError as e:
@@ -545,18 +560,50 @@ class DatabaseManager:
                         ),
                     )
 
-                    # Insert authors into authors table (ignore duplicates)
+                    # Insert authors into authors table
+                    # Check if author exists with same ID but different name (hash collision)
                     for author_data in author_objects:
+                        # Check if this author ID exists with a different name
                         cursor.execute(
                             """
-                            INSERT OR IGNORE INTO authors (id, fullname, url, institution)
-                            VALUES (?, ?, ?, ?)
+                            SELECT fullname FROM authors WHERE id = ?
+                            """,
+                            (author_data["id"],),
+                        )
+                        existing = cursor.fetchone()
+                        
+                        if existing and existing[0] != author_data["fullname"]:
+                            # Hash collision - generate new ID by adding offset
+                            logger.warning(
+                                f"Author ID collision detected: ID {author_data['id']} "
+                                f"exists as '{existing[0]}' but trying to insert '{author_data['fullname']}'. "
+                                f"Generating new ID."
+                            )
+                            # Add an offset to avoid collision
+                            original_id = author_data["id"]
+                            offset = 1
+                            while True:
+                                new_id = original_id + offset
+                                cursor.execute("SELECT id FROM authors WHERE id = ?", (new_id,))
+                                if not cursor.fetchone():
+                                    author_data["id"] = new_id
+                                    logger.info(f"Using new ID {new_id} for author '{author_data['fullname']}'")
+                                    break
+                                offset += 1
+                                if offset > 1000:  # Safety limit
+                                    raise DatabaseError(f"Could not find available author ID after {offset} attempts")
+                        
+                        cursor.execute(
+                            """
+                            INSERT OR IGNORE INTO authors (id, fullname, url, institution, original_id)
+                            VALUES (?, ?, ?, ?, ?)
                             """,
                             (
                                 author_data["id"],
                                 author_data["fullname"],
                                 author_data["url"],
                                 author_data["institution"],
+                                author_data.get("original_id"),
                             ),
                         )
 

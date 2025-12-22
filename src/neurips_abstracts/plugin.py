@@ -190,7 +190,6 @@ def convert_lightweight_to_neurips_schema(
         If required fields are missing
     """
     results = []
-    author_id_counter = 1
 
     for idx, paper in enumerate(papers):
         # Validate required fields
@@ -217,20 +216,35 @@ def convert_lightweight_to_neurips_schema(
         if isinstance(author_data, list):
             for author in author_data:
                 if isinstance(author, str):
-                    # Simple string author
-                    authors_list.append({"id": author_id_counter, "fullname": author, "url": "", "institution": ""})
-                    author_id_counter += 1
+                    # Simple string author - generate stable ID from name hash
+                    # Use hash to avoid collisions across conferences
+                    author_id = abs(hash(author.lower())) % (10**9)  # Keep ID within reasonable range
+                    authors_list.append({
+                        "id": author_id,
+                        "fullname": author,
+                        "url": "",
+                        "institution": "",
+                        "original_id": None
+                    })
                 elif isinstance(author, dict):
-                    # Author dict - use provided data
+                    # Author dict - preserve original ID if present, use hash-based ID
+                    fullname = author.get("fullname", author.get("name", "Unknown"))
+                    
+                    # Store original ID if present
+                    original_id = author.get("id") if "id" in author else None
+                    
+                    # Always generate hash-based ID for consistency
+                    author_id = abs(hash(fullname.lower())) % (10**9)
+                    
                     authors_list.append(
                         {
-                            "id": author.get("id", author_id_counter),
-                            "fullname": author.get("fullname", author.get("name", "Unknown")),
+                            "id": author_id,
+                            "fullname": fullname,
                             "url": author.get("url", ""),
                             "institution": author.get("institution", ""),
+                            "original_id": str(original_id) if original_id is not None else None,
                         }
                     )
-                    author_id_counter += 1
 
         # Build eventmedia list
         eventmedia = []

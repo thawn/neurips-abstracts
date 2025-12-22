@@ -288,10 +288,11 @@ class ML4PSDownloaderPlugin(LightweightDownloaderPlugin):
             else:
                 title = ""
 
-            # Extract authors
+            # Extract authors - handle both <br>...</br> and <br/> formats
             authors = ""
             br_tag = content.find("br")
             if br_tag:
+                # Case 1: Authors inside <br> tag (old format: <br>Authors</br>)
                 if br_tag.string:
                     authors = br_tag.string
                 elif br_tag.contents:
@@ -302,6 +303,22 @@ class ML4PSDownloaderPlugin(LightweightDownloaderPlugin):
                         else:
                             authors_parts.append(item.get_text(strip=True))
                     authors = " ".join(authors_parts)
+                
+                # Case 2: Authors after self-closing <br/> tag (new format)
+                if not authors.strip():
+                    # Get all siblings after the br tag
+                    authors_parts = []
+                    for sibling in br_tag.next_siblings:
+                        if isinstance(sibling, str):
+                            text = sibling.strip()
+                            if text:
+                                authors_parts.append(text)
+                        elif sibling.name not in ['a', 'br']:  # Skip links and nested br tags
+                            text = sibling.get_text(strip=True)
+                            if text:
+                                authors_parts.append(text)
+                    if authors_parts:
+                        authors = " ".join(authors_parts)
 
             # Clean title and authors
             title = self._clean_text(title)
