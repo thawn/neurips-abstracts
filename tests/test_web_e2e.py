@@ -489,7 +489,7 @@ class TestWebUIE2E:
         browser.get(base_url)
 
         # Check page title
-        assert "NeurIPS Abstracts Explorer" in browser.title
+        assert "Abstracts Explorer" in browser.title
 
         # Check that main elements are present
         assert browser.find_element(By.ID, "search-input")
@@ -1308,7 +1308,7 @@ class TestWebUIE2E:
         time.sleep(1)
 
         # Should still be on the same page (single page app)
-        assert "NeurIPS Abstracts Explorer" in browser.title
+        assert "Abstracts Explorer" in browser.title
 
     def test_page_no_javascript_errors(self, web_server, browser):
         """
@@ -1338,7 +1338,7 @@ class TestWebUIE2E:
         except AttributeError:
             # Firefox doesn't support get_log, skip this check
             # Just verify page loaded successfully
-            assert "NeurIPS Abstracts Explorer" in browser.title
+            assert "Abstracts Explorer" in browser.title
 
 
 @pytest.mark.e2e
