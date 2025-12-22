@@ -198,168 +198,194 @@ class DatabaseManager:
             self.connection.rollback()
             raise DatabaseError(f"Failed to create tables: {str(e)}") from e
 
-    def load_json_data(self, data: Union[Dict[str, Any], List[Dict[str, Any]]]) -> int:
+    def add_paper(self, paper: LightweightPaper) -> Optional[int]:
         """
-        Load JSON data into the database.
+        Add a single paper to the database.
 
         Parameters
         ----------
-        data : dict or list of dict
-            JSON data to load. Can be a single dictionary or a list of dictionaries.
+        paper : LightweightPaper
+            Validated paper object to insert.
 
         Returns
         -------
-        int
-            Number of records inserted.
+        int or None
+            The ID of the inserted paper, or None if paper was skipped (duplicate).
 
         Raises
         ------
         DatabaseError
-            If loading data fails.
+            If insertion fails.
 
         Examples
         --------
+        >>> from neurips_abstracts.plugin import LightweightPaper
         >>> db = DatabaseManager("neurips.db")
         >>> with db:
         ...     db.create_tables()
-        ...     count = db.load_json_data(json_data)
-        >>> print(f"Inserted {count} records")
+        ...     paper = LightweightPaper(
+        ...         title="Test Paper",
+        ...         authors=["John Doe"],
+        ...         abstract="Test abstract",
+        ...         session="Session 1",
+        ...         poster_position="P1",
+        ...         year=2025,
+        ...         conference="NeurIPS"
+        ...     )
+        ...     paper_id = db.add_paper(paper)
+        >>> print(f"Inserted paper with ID: {paper_id}")
         """
         if not self.connection:
             raise DatabaseError("Not connected to database")
 
-        # Handle different data structures
-        if isinstance(data, dict):
-            # Check if data contains a list of papers
-            if "results" in data:
-                # NeurIPS 2025 format with paginated results
-                records = data["results"]
-            elif "papers" in data:
-                records = data["papers"]
-            elif "data" in data:
-                records = data["data"]
-            else:
-                # Treat the dict as a single record
-                records = [data]
-        elif isinstance(data, list):
-            records = data
-        else:
-            raise ValueError("Data must be a dictionary or list of dictionaries")
-
         try:
+            import hashlib
+
             cursor = self.connection.cursor()
-            inserted_count = 0
-            validation_errors = []
 
-            for idx, record in enumerate(records):
-                try:
-                    # Validate record using Pydantic model (lightweight schema)
-                    paper = LightweightPaper(**record)
-                except ValidationError as e:
-                    error_msg = f"Validation error for record {idx}: {str(e)}"
-                    logger.warning(error_msg)
-                    validation_errors.append(error_msg)
-                    continue
+            # Extract validated fields from LightweightPaper
+            paper_id = paper.original_id if paper.original_id else None
+            title = paper.title
+            abstract = paper.abstract
 
-                # Extract validated fields (lightweight schema only)
-                paper_id = paper.id if paper.id else None
-                original_id = record.get("uid", "")  # Get original UID from record, not from paper object
-                title = paper.title
-                abstract = paper.abstract
+            # Handle authors - store as semicolon-separated names
+            authors_data = paper.authors
+            if isinstance(authors_data, list):
+                authors_str = "; ".join(str(author) for author in authors_data)
+            else:
+                authors_str = str(authors_data) if authors_data else ""
 
-                # Handle authors - store as semicolon-separated names
-                authors_data = paper.authors
-                authors_str = ""
+            # Generate UID as hash from title + conference + year
+            uid_source = f"{title}:{paper.conference}:{paper.year}"
+            uid = hashlib.sha256(uid_source.encode("utf-8")).hexdigest()[:16]
 
-                if isinstance(authors_data, list):
-                    author_names = []
-                    for author_item in authors_data:
-                        if isinstance(author_item, dict):
-                            # Extract fullname from dict
-                            author_names.append(author_item.get("fullname", author_item.get("name", "")))
-                        else:
-                            # Simple string (author name)
-                            author_names.append(str(author_item))
-                    authors_str = "; ".join(author_names)
-                else:
-                    authors_str = str(authors_data) if authors_data else ""
+            # Check if paper already exists (by UID)
+            existing = cursor.execute("SELECT id FROM papers WHERE uid = ?", (uid,)).fetchone()
+            if existing:
+                logger.debug(f"Skipping duplicate paper: {title} (uid: {uid})")
+                return None
 
-                # Generate UID as hash from title + original_id
-                import hashlib
+            # Extract lightweight schema fields
+            session = paper.session
+            poster_position = paper.poster_position
+            paper_pdf_url = paper.paper_pdf_url
+            poster_image_url = paper.poster_image_url
+            url = paper.url
+            room_name = paper.room_name
+            starttime = paper.starttime
+            endtime = paper.endtime
+            award = paper.award
+            year = paper.year
+            conference = paper.conference
 
-                uid_source = f"{title}:{original_id if original_id else ''}"
-                uid = hashlib.sha256(uid_source.encode("utf-8")).hexdigest()[:16]
+            # Handle keywords (could be list or None)
+            keywords = paper.keywords
+            if isinstance(keywords, list):
+                keywords = ", ".join(str(k) for k in keywords)
+            elif keywords is None:
+                keywords = ""
 
-                # Extract lightweight schema fields
-                session = paper.session
-                poster_position = paper.poster_position
-                paper_pdf_url = paper.paper_pdf_url
-                poster_image_url = paper.poster_image_url
-                url = paper.url
-                room_name = paper.room_name
-                starttime = paper.starttime
-                endtime = paper.endtime
-                award = paper.award
-                year = paper.year
-                conference = paper.conference
+            # Use uid as original_id for now (can be overridden by caller if needed)
+            original_id = uid
 
-                # Handle keywords (could be list or string)
-                keywords = paper.keywords
-                if isinstance(keywords, list):
-                    keywords = ", ".join(str(k) for k in keywords)
-                elif keywords is None:
-                    keywords = ""
-
-                try:
-                    # Insert paper with lightweight schema
-                    cursor.execute(
-                        """
-                        INSERT OR REPLACE INTO papers 
-                        (id, uid, original_id, title, authors, abstract, session, poster_position,
-                         paper_pdf_url, poster_image_url, url, room_name, keywords, starttime, endtime,
-                         award, year, conference)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                        (
-                            paper_id,
-                            uid,
-                            original_id,
-                            title,
-                            authors_str,
-                            abstract,
-                            session,
-                            poster_position,
-                            paper_pdf_url,
-                            poster_image_url,
-                            url,
-                            room_name,
-                            keywords,
-                            starttime,
-                            endtime,
-                            award,
-                            year,
-                            conference,
-                        ),
-                    )
-
-                    inserted_count += 1
-                except sqlite3.IntegrityError:
-                    logger.warning(f"Skipping duplicate record: {paper_id}")
-                    continue
+            # Insert paper with lightweight schema
+            cursor.execute(
+                """
+                INSERT INTO papers 
+                (id, uid, original_id, title, authors, abstract, session, poster_position,
+                 paper_pdf_url, poster_image_url, url, room_name, keywords, starttime, endtime,
+                 award, year, conference)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    paper_id,
+                    uid,
+                    original_id,
+                    title,
+                    authors_str,
+                    abstract,
+                    session,
+                    poster_position,
+                    paper_pdf_url,
+                    poster_image_url,
+                    url,
+                    room_name,
+                    keywords,
+                    starttime,
+                    endtime,
+                    award,
+                    year,
+                    conference,
+                ),
+            )
 
             self.connection.commit()
-
-            # Log summary
-            if validation_errors:
-                logger.warning(f"Encountered {len(validation_errors)} validation errors")
-                logger.debug(f"Validation errors: {validation_errors}")
-
-            logger.info(f"Successfully inserted {inserted_count} records")
-            return inserted_count
+            return cursor.lastrowid
 
         except sqlite3.Error as e:
             self.connection.rollback()
-            raise DatabaseError(f"Failed to load data: {str(e)}") from e
+            raise DatabaseError(f"Failed to add paper: {str(e)}") from e
+
+    def add_papers(self, papers: List[LightweightPaper]) -> int:
+        """
+        Add multiple papers to the database in a batch.
+
+        Parameters
+        ----------
+        papers : list of LightweightPaper
+            List of validated paper objects to insert.
+
+        Returns
+        -------
+        int
+            Number of papers successfully inserted (excludes duplicates).
+
+        Raises
+        ------
+        DatabaseError
+            If batch insertion fails.
+
+        Examples
+        --------
+        >>> from neurips_abstracts.plugin import LightweightPaper
+        >>> db = DatabaseManager("neurips.db")
+        >>> with db:
+        ...     db.create_tables()
+        ...     papers = [
+        ...         LightweightPaper(
+        ...             title="Paper 1",
+        ...             authors=["Author 1"],
+        ...             abstract="Abstract 1",
+        ...             session="Session 1",
+        ...             poster_position="P1",
+        ...             year=2025,
+        ...             conference="NeurIPS"
+        ...         ),
+        ...         LightweightPaper(
+        ...             title="Paper 2",
+        ...             authors=["Author 2"],
+        ...             abstract="Abstract 2",
+        ...             session="Session 2",
+        ...             poster_position="P2",
+        ...             year=2025,
+        ...             conference="NeurIPS"
+        ...         )
+        ...     ]
+        ...     count = db.add_papers(papers)
+        >>> print(f"Inserted {count} papers")
+        """
+        if not self.connection:
+            raise DatabaseError("Not connected to database")
+
+        inserted_count = 0
+
+        for paper in papers:
+            result = self.add_paper(paper)
+            if result is not None:
+                inserted_count += 1
+
+        logger.info(f"Successfully inserted {inserted_count} of {len(papers)} papers")
+        return inserted_count
 
     def query(self, sql: str, parameters: tuple = ()) -> List[sqlite3.Row]:
         """

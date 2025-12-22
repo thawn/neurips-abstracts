@@ -18,7 +18,11 @@ from urllib.parse import urljoin
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
-from neurips_abstracts.plugin import LightweightDownloaderPlugin, convert_lightweight_to_neurips_schema
+from neurips_abstracts.plugin import (
+    LightweightDownloaderPlugin,
+    convert_lightweight_to_neurips_schema,
+    LightweightPaper,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +55,7 @@ class ML4PSDownloaderPlugin(LightweightDownloaderPlugin):
         output_path: Optional[str] = None,
         force_download: bool = False,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> List[LightweightPaper]:
         """
         Download papers from ML4PS workshop.
 
@@ -70,14 +74,8 @@ class ML4PSDownloaderPlugin(LightweightDownloaderPlugin):
 
         Returns
         -------
-        dict
-            Downloaded data in NeurIPS format (automatically converted from lightweight format):
-            {
-                'count': int,
-                'next': None,
-                'previous': None,
-                'results': [list of papers in full NeurIPS schema]
-            }
+        list of LightweightPaper
+            List of validated paper objects ready for database insertion
         """
         if year is None:
             year = 2025
@@ -92,10 +90,11 @@ class ML4PSDownloaderPlugin(LightweightDownloaderPlugin):
                 logger.info(f"Loading existing data from: {output_file}")
                 try:
                     with open(output_file, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    logger.info(f"Successfully loaded {data.get('count', 0)} papers from local file")
-                    return data
-                except (json.JSONDecodeError, IOError) as e:
+                        papers_data = json.load(f)
+                    papers = [LightweightPaper(**paper) for paper in papers_data]
+                    logger.info(f"Successfully loaded {len(papers)} papers from local file")
+                    return papers
+                except (json.JSONDecodeError, IOError, Exception) as e:
                     logger.warning(f"Failed to load local file: {str(e)}. Downloading from web...")
 
         # Get options from kwargs
@@ -104,38 +103,35 @@ class ML4PSDownloaderPlugin(LightweightDownloaderPlugin):
         logger.info(f"Scraping ML4PS {year} workshop papers...")
 
         # Scrape papers
-        papers = self._scrape_papers()
+        papers_raw = self._scrape_papers()
 
-        if not papers:
+        if not papers_raw:
             logger.error("No papers were scraped")
-            return {"count": 0, "next": None, "previous": None, "results": []}
+            return []
 
         # Fetch abstracts (required field)
-        logger.info(f"Fetching abstracts for {len(papers)} papers...")
-        self._fetch_abstracts_for_papers(papers, max_workers=max_workers)
+        logger.info(f"Fetching abstracts for {len(papers_raw)} papers...")
+        self._fetch_abstracts_for_papers(papers_raw, max_workers=max_workers)
 
         # Convert to lightweight format
-        lightweight_papers = self._convert_to_lightweight_format(papers)
+        lightweight_papers_data = self._convert_to_lightweight_format(papers_raw)
 
-        # Convert to full NeurIPS schema using converter
-        data = convert_lightweight_to_neurips_schema(
-            lightweight_papers,
-            session_default="ML4PhysicalSciences 2025 Workshop",
-            event_type="Workshop Poster",
-            source_url="https://ml4physicalsciences.github.io/2025/",
-        )
+        # Convert to LightweightPaper objects
+        papers = [LightweightPaper(**paper) for paper in lightweight_papers_data]
 
         # Save to file if path provided
         if output_path:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
+            # Save as list of dicts for readability
+            papers_json = [paper.model_dump() for paper in papers]
             with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+                json.dump(papers_json, f, indent=2, ensure_ascii=False)
             logger.info(f"Saved to {output_file}")
 
-        logger.info(f"Successfully downloaded {data['count']} papers from ML4PS {year}")
+        logger.info(f"Successfully downloaded {len(papers)} papers from ML4PS {year}")
 
-        return data
+        return papers
 
     def get_metadata(self) -> Dict[str, Any]:
         """
@@ -303,7 +299,7 @@ class ML4PSDownloaderPlugin(LightweightDownloaderPlugin):
                         else:
                             authors_parts.append(item.get_text(strip=True))
                     authors = " ".join(authors_parts)
-                
+
                 # Case 2: Authors after self-closing <br/> tag (new format)
                 if not authors.strip():
                     # Get all siblings after the br tag

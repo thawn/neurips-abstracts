@@ -13,6 +13,7 @@ from neurips_abstracts.cli import (
     main,
     search_command,
 )
+from neurips_abstracts.plugin import LightweightPaper
 
 
 class TestCLI:
@@ -43,18 +44,31 @@ class TestCLI:
         """Test download command completes successfully."""
         output_db = tmp_path / "test.db"
 
-        # Mock the plugin and its download method
+        # Mock the plugin and its download method to return LightweightPaper objects
         mock_plugin = Mock()
         mock_plugin.plugin_name = "neurips"
         mock_plugin.plugin_description = "NeurIPS Test Plugin"
-        mock_data = {
-            "results": [
-                {"id": 1, "title": "Paper 1", "abstract": "Abstract 1"},
-                {"id": 2, "title": "Paper 2", "abstract": "Abstract 2"},
-            ],
-            "count": 2,
-        }
-        mock_plugin.download.return_value = mock_data
+        mock_papers = [
+            LightweightPaper(
+                title="Paper 1",
+                abstract="Abstract 1",
+                authors=["Author 1"],
+                session="Session 1",
+                poster_position="P1",
+                year=2025,
+                conference="NeurIPS",
+            ),
+            LightweightPaper(
+                title="Paper 2",
+                abstract="Abstract 2",
+                authors=["Author 2"],
+                session="Session 2",
+                poster_position="P2",
+                year=2025,
+                conference="NeurIPS",
+            ),
+        ]
+        mock_plugin.download.return_value = mock_papers
 
         with patch("neurips_abstracts.cli.get_plugin") as mock_get_plugin:
             mock_get_plugin.return_value = mock_plugin
@@ -119,7 +133,18 @@ class TestCLI:
         db_path = tmp_path / "test.db"
         with DatabaseManager(db_path) as db:
             db.create_tables()
-            db.load_json_data([{"id": 1, "title": "Test", "abstract": "Abstract"}])
+            papers = [
+                LightweightPaper(
+                    title="Test",
+                    abstract="Abstract",
+                    authors=["Test Author"],
+                    session="Test Session",
+                    poster_position="P1",
+                    year=2025,
+                    conference="NeurIPS",
+                )
+            ]
+            db.add_papers(papers)
 
         # Mock LM Studio connection failure
         with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
@@ -153,12 +178,27 @@ class TestCLI:
         db_path = tmp_path / "test.db"
         with DatabaseManager(db_path) as db:
             db.create_tables()
-            db.load_json_data(
-                [
-                    {"id": 1, "title": "Paper 1", "abstract": "Abstract 1"},
-                    {"id": 2, "title": "Paper 2", "abstract": "Abstract 2"},
-                ]
-            )
+            papers = [
+                LightweightPaper(
+                    title="Paper 1",
+                    abstract="Abstract 1",
+                    authors=["Test Author"],
+                    session="Test Session",
+                    poster_position="P1",
+                    year=2025,
+                    conference="NeurIPS",
+                ),
+                LightweightPaper(
+                    title="Paper 2",
+                    abstract="Abstract 2",
+                    authors=["Test Author"],
+                    session="Test Session",
+                    poster_position="P1",
+                    year=2025,
+                    conference="NeurIPS",
+                ),
+            ]
+            db.add_papers(papers)
 
         # Mock embeddings manager
         with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
@@ -199,12 +239,29 @@ class TestCLI:
         db_path = tmp_path / "test.db"
         with DatabaseManager(db_path) as db:
             db.create_tables()
-            db.load_json_data(
-                [
-                    {"id": 1, "name": "Paper 1", "abstract": "Abstract 1", "decision": "Accept"},
-                    {"id": 2, "name": "Paper 2", "abstract": "Abstract 2", "decision": "Reject"},
-                ]
-            )
+            papers = [
+                LightweightPaper(
+                    title="Paper 1",
+                    authors=["Author 1"],
+                    abstract="Abstract 1",
+                    session="Session 1",
+                    poster_position="P1",
+                    year=2025,
+                    conference="NeurIPS",
+                    award="Best Paper",
+                ),
+                LightweightPaper(
+                    title="Paper 2",
+                    authors=["Author 2"],
+                    abstract="Abstract 2",
+                    session="Session 2",
+                    poster_position="P2",
+                    year=2025,
+                    conference="NeurIPS",
+                    award=None,
+                ),
+            ]
+            db.add_papers(papers)
 
         # Mock embeddings manager
         with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
@@ -227,7 +284,7 @@ class TestCLI:
                     "--output",
                     str(tmp_path / "embeddings"),
                     "--where",
-                    "decision = 'Accept'",
+                    "award IS NOT NULL",
                 ],
             ):
                 exit_code = main()
@@ -245,7 +302,18 @@ class TestCLI:
         db_path = tmp_path / "test.db"
         with DatabaseManager(db_path) as db:
             db.create_tables()
-            db.load_json_data([{"id": 1, "title": "Test", "abstract": "Abstract"}])
+            papers = [
+                LightweightPaper(
+                    title="Test",
+                    abstract="Abstract",
+                    authors=["Test Author"],
+                    session="Test Session",
+                    poster_position="P1",
+                    year=2025,
+                    conference="NeurIPS",
+                )
+            ]
+            db.add_papers(papers)
 
         embeddings_path = tmp_path / "embeddings"
         embeddings_path.mkdir()
@@ -290,7 +358,18 @@ class TestCLI:
         db_path = tmp_path / "test.db"
         with DatabaseManager(db_path) as db:
             db.create_tables()
-            db.load_json_data([{"id": 1, "title": "Test", "abstract": "Abstract"}])
+            papers = [
+                LightweightPaper(
+                    title="Test",
+                    abstract="Abstract",
+                    authors=["Test Author"],
+                    session="Test Session",
+                    poster_position="P1",
+                    year=2025,
+                    conference="NeurIPS",
+                )
+            ]
+            db.add_papers(papers)
 
         custom_url = "http://localhost:5000"
         custom_model = "custom-embedding-model"
@@ -338,7 +417,18 @@ class TestCLI:
         db_path = tmp_path / "test.db"
         with DatabaseManager(db_path) as db:
             db.create_tables()
-            db.load_json_data([{"id": 1, "title": "Test", "abstract": "Abstract"}])
+            papers = [
+                LightweightPaper(
+                    title="Test",
+                    abstract="Abstract",
+                    authors=["Test Author"],
+                    session="Test Session",
+                    poster_position="P1",
+                    year=2025,
+                    conference="NeurIPS",
+                )
+            ]
+            db.add_papers(papers)
 
         # Mock embeddings manager to raise error
         with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
@@ -585,52 +675,28 @@ class TestCLI:
 
     def test_search_with_db_path_author_names(self, tmp_path, capsys):
         """Test search command with database path to resolve author names."""
+        from neurips_abstracts import DatabaseManager
+
+        # Create a test database with lightweight schema
+        db_path = tmp_path / "test.db"
+        with DatabaseManager(db_path) as db:
+            db.create_tables()
+            papers = [
+                LightweightPaper(
+                    title="Test Paper",
+                    authors=["John Doe", "Jane Smith"],
+                    abstract="Test abstract",
+                    session="Session 1",
+                    poster_position="A12",
+                    year=2025,
+                    conference="NeurIPS",
+                    url="https://example.com/paper/1",
+                )
+            ]
+            db.add_papers(papers)
+
         embeddings_path = tmp_path / "embeddings"
         embeddings_path.mkdir()
-
-        # Create a test database with authors
-        db_path = tmp_path / "test.db"
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.cursor()
-
-        # Create tables
-        cursor.execute(
-            """
-            CREATE TABLE papers (
-                id INTEGER PRIMARY KEY,
-                name TEXT,
-                authors TEXT
-            )
-        """
-        )
-        cursor.execute(
-            """
-            CREATE TABLE authors (
-                id INTEGER PRIMARY KEY,
-                fullname TEXT,
-                url TEXT,
-                institution TEXT
-            )
-        """
-        )
-        cursor.execute(
-            """
-            CREATE TABLE paper_authors (
-                paper_id INTEGER,
-                author_id INTEGER,
-                author_order INTEGER
-            )
-        """
-        )
-
-        # Insert test data
-        cursor.execute("INSERT INTO papers VALUES (1, 'Test Paper', '101,102')")
-        cursor.execute("INSERT INTO authors VALUES (101, 'John Doe', 'url1', 'MIT')")
-        cursor.execute("INSERT INTO authors VALUES (102, 'Jane Smith', 'url2', 'Stanford')")
-        cursor.execute("INSERT INTO paper_authors VALUES (1, 101, 1)")
-        cursor.execute("INSERT INTO paper_authors VALUES (1, 102, 2)")
-        conn.commit()
-        conn.close()
 
         # Mock embeddings manager
         with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
@@ -644,9 +710,10 @@ class TestCLI:
                     [
                         {
                             "title": "Test Paper",
-                            "authors": "101,102",
-                            "decision": "Accept",
-                            "topic": "ML",
+                            "authors": "John Doe; Jane Smith",
+                            "session": "Session 1",
+                            "year": 2025,
+                            "conference": "NeurIPS",
                             "paper_url": "https://example.com/paper/1",
                             "poster_position": "A12",
                         }
@@ -675,8 +742,8 @@ class TestCLI:
 
         assert exit_code == 0
         captured = capsys.readouterr()
-        # Should show author names instead of IDs
-        assert "John Doe, Jane Smith" in captured.out
+        # Should show author names (already in proper format in lightweight schema)
+        assert "John Doe; Jane Smith" in captured.out
         assert "https://example.com/paper/1" in captured.out
         assert "A12" in captured.out
 

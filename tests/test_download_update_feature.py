@@ -77,7 +77,7 @@ class TestDownloadEndpoint:
         # Setup database mock
         mock_db = Mock()
         mock_db.query.return_value = [{"count": 0}]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock
@@ -174,7 +174,7 @@ class TestSSEStreaming:
             [{"count": 0}],  # Existing count check
             []  # Papers to embed query
         ]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock
@@ -230,7 +230,7 @@ class TestSSEStreaming:
             [{"count": 0}],  # Existing count check
             []  # Papers to embed query (empty - no papers to embed)
         ]
-        mock_db.load_json_data.return_value = 5
+        mock_db.add_papers.return_value = 5
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock
@@ -303,7 +303,7 @@ class TestSmartEmbeddingOptimization:
                 {"id": 3, "uid": "uid3", "name": "Paper 3", "abstract": "Abstract 3", "year": 2025, "conference": "NeurIPS"}
             ]
         ]
-        mock_db.load_json_data.return_value = 1  # 1 new paper added
+        mock_db.add_papers.return_value = 1  # 1 new paper added
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock - all papers have embeddings
@@ -365,7 +365,7 @@ class TestSmartEmbeddingOptimization:
                 {"id": 2, "uid": "uid2", "name": "Paper 2", "abstract": "Abstract 2", "year": 2025, "conference": "NeurIPS"}
             ]
         ]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock
@@ -432,7 +432,7 @@ class TestMissingEmbeddingDetection:
                 {"id": 3, "uid": "uid3", "name": "Paper 3", "abstract": "Abstract 3", "year": 2025, "conference": "NeurIPS"}
             ]
         ]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock - only paper 1 and 2 have embeddings, paper 3 is missing
@@ -487,7 +487,7 @@ class TestMissingEmbeddingDetection:
             [{"id": 1, "uid": "uid1", "name": "Paper 1", "abstract": "Abstract 1"}],
             [{"id": 1, "uid": "uid1", "name": "Paper 1", "abstract": "Abstract 1", "year": 2025, "conference": "NeurIPS"}]
         ]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock - ChromaDB query fails
@@ -542,7 +542,7 @@ class TestConnectionManagement:
             [{"count": 0}],
             []
         ]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db.close = Mock()
         mock_db_class.return_value = mock_db
 
@@ -652,7 +652,7 @@ class TestProgressTracking:
                 {"id": 1, "uid": "uid1", "name": "Paper 1", "abstract": "Abstract 1", "year": 2025, "conference": "NeurIPS"}
             ]
         ]
-        mock_db.load_json_data.return_value = 1
+        mock_db.add_papers.return_value = 1
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock

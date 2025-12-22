@@ -36,7 +36,7 @@ class DownloaderPlugin(ABC):
         output_path: Optional[str] = None,
         force_download: bool = False,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> List["LightweightPaper"]:
         """
         Download papers from the data source.
 
@@ -53,14 +53,8 @@ class DownloaderPlugin(ABC):
 
         Returns
         -------
-        dict
-            Downloaded data in the standardized format:
-            {
-                'count': int,
-                'next': None,
-                'previous': None,
-                'results': [list of papers]
-            }
+        list of LightweightPaper
+            List of validated paper objects ready for database insertion
         """
         pass
 
@@ -699,8 +693,8 @@ class LightweightPaper(BaseModel):
 
     Optional Fields
     ---------------
-    id : int
-        Paper ID (auto-generated if not provided)
+    original_id : int
+        Paper ID from the original source
     paper_pdf_url : str
         URL to paper PDF
     poster_image_url : str
@@ -729,7 +723,7 @@ class LightweightPaper(BaseModel):
     conference: str
 
     # Optional fields
-    id: Optional[int] = None
+    original_id: Optional[int] = None
     paper_pdf_url: Optional[str] = None
     poster_image_url: Optional[str] = None
     url: Optional[str] = None

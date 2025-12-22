@@ -564,7 +564,7 @@ def download_and_embed():
     # Capture config before generator runs
     config = get_config()
     db_path = Path(config.paper_db_path)
-    
+
     # For SSE streaming, we need standalone connections (not Flask g-based)
     # We'll create them inside the generator where they're needed
 
@@ -573,18 +573,18 @@ def download_and_embed():
         # Create standalone database and embeddings manager connections
         database = None
         em = None
-        
+
         try:
             from neurips_abstracts.plugins import get_plugin
             import neurips_abstracts.plugins.neurips_downloader
             import neurips_abstracts.plugins.iclr_downloader
             import neurips_abstracts.plugins.icml_downloader
             import neurips_abstracts.plugins.ml4ps_downloader
-            
+
             # Create standalone database connection
             database = DatabaseManager(str(db_path))
             database.connect()
-            
+
             # Create standalone embeddings manager
             em = EmbeddingsManager(
                 lm_studio_url=config.llm_backend_url,
@@ -599,7 +599,7 @@ def download_and_embed():
             # Need to handle cases like "ML4PS@Neurips" -> "ml4ps"
             from neurips_abstracts.plugins import list_plugins
             plugins = list_plugins()
-            
+
             # Build reverse mapping from conference_name to plugin name
             conference_to_plugin = {}
             for plugin_info in plugins:
@@ -607,7 +607,7 @@ def download_and_embed():
                 plug_name = plugin_info.get("name")
                 if conf_name and plug_name:
                     conference_to_plugin[conf_name] = plug_name
-            
+
             # Look up plugin name by conference name
             plugin_name = conference_to_plugin.get(conference)
             if not plugin_name:
@@ -636,11 +636,11 @@ def download_and_embed():
 
             # Download data using plugin
             json_path = db_path.parent / f"{plugin_name}_{year}.json"
-            download_data = plugin.download(
+            papers = plugin.download(
                 year=year, output_path=str(json_path), force_download=True  # Always re-download to get updates
             )
 
-            downloaded_count = download_data.get("count", 0)
+            downloaded_count = len(papers)
             logger.info(f"Downloaded {downloaded_count} papers from {conference} {year}")
 
             yield f"data: {json.dumps({'stage': 'download', 'progress': 100, 'message': f'Downloaded {downloaded_count} papers'})}\n\n"
@@ -649,23 +649,27 @@ def download_and_embed():
             existing_papers = {}
             if is_update:
                 existing_rows = database.query(
-                    "SELECT id, uid, name, abstract FROM papers WHERE year = ? AND conference = ?",
+                    "SELECT id, uid, title, abstract FROM papers WHERE year = ? AND conference = ?",
                     (year, conference),
                 )
                 # Map by uid (unique identifier) for easy lookup
-                existing_papers = {row["uid"]: {"id": row["id"], "name": row["name"], "abstract": row["abstract"]} for row in existing_rows if row["uid"]}
+                existing_papers = {
+                    row["uid"]: {"id": row["id"], "title": row["title"], "abstract": row["abstract"]}
+                    for row in existing_rows
+                    if row["uid"]
+                }
 
             # Load into database (this will update existing papers)
             yield f"data: {json.dumps({'stage': 'database', 'progress': 0, 'message': 'Loading papers into database...'})}\n\n"
 
-            new_count = database.load_json_data(download_data)
+            new_count = database.add_papers(papers)
             logger.info(f"Loaded/updated {new_count} papers in database")
 
             yield f"data: {json.dumps({'stage': 'database', 'progress': 100, 'message': f'Loaded {new_count} papers into database'})}\n\n"
 
             # Get papers after update and determine which ones changed
             all_papers = database.query(
-                "SELECT id, uid, name, abstract, year, conference FROM papers WHERE year = ? AND conference = ?",
+                "SELECT id, uid, title, abstract, year, conference FROM papers WHERE year = ? AND conference = ?",
                 (year, conference),
             )
 
@@ -689,7 +693,7 @@ def download_and_embed():
             for paper in all_papers:
                 uid = paper["uid"]
                 paper_id_str = str(paper["id"])
-                
+
                 if not uid or uid not in existing_papers:
                     # New paper - needs embedding
                     papers_to_embed.append(paper)

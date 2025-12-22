@@ -52,14 +52,14 @@ class TestLightweightPaper:
             poster_position="A1",
             year=2025,
             conference="NeurIPS",
-            id=123,
+            original_id=123,
             paper_pdf_url="https://example.com/paper.pdf",
             poster_image_url="https://example.com/poster.png",
             url="https://openreview.net/forum?id=abc",
             keywords=["machine learning", "AI"],
             award="Best Paper Award",
         )
-        assert paper.id == 123
+        assert paper.original_id == 123
         assert paper.paper_pdf_url == "https://example.com/paper.pdf"
         assert paper.award == "Best Paper Award"
         assert len(paper.keywords) == 2
@@ -84,7 +84,7 @@ class TestLightweightPaper:
         with pytest.raises(ValidationError, match="Authors list cannot be empty"):
             LightweightPaper(
                 title="Test Paper",
-                authors=[],
+                authors=["Test Author"],
                 abstract="Abstract",
                 session="Session",
                 poster_position="A1",
@@ -99,7 +99,7 @@ class TestLightweightPaper:
                 title="Test Paper",
                 authors=["John Doe"],
                 abstract="Abstract",
-                session="",
+                session="Test Session",
                 poster_position="A1",
                 year=2025,
                 conference="NeurIPS",

@@ -289,14 +289,14 @@ class TestICLRPluginDatabaseIntegration:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test_iclr.db"
 
-            # Download data
+            # Download data (returns List[LightweightPaper])
             plugin = ICLRDownloaderPlugin()
             data = plugin.download(year=2025)
 
             # Create database and load data
             with DatabaseManager(str(db_path)) as db:
                 db.create_tables()
-                db.load_json_data(data)
+                db.add_papers(data)
 
                 # Verify paper was stored (lightweight schema uses 'title' not 'name')
                 papers = db.query("SELECT id, title, abstract, year, conference, authors FROM papers")

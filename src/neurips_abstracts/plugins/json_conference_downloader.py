@@ -6,13 +6,13 @@ Base class for conference downloader plugins that fetch JSON data from a URL.
 This reduces code duplication between similar conference data downloaders.
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from pathlib import Path
 import logging
 import json
 import requests
 
-from neurips_abstracts.plugin import DownloaderPlugin, convert_neurips_to_lightweight_schema
+from neurips_abstracts.plugin import DownloaderPlugin, convert_neurips_to_lightweight_schema, LightweightPaper
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class JSONConferenceDownloaderPlugin(DownloaderPlugin):
         output_path: Optional[str] = None,
         force_download: bool = False,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> List[LightweightPaper]:
         """
         Download papers from conference.
 
@@ -89,14 +89,8 @@ class JSONConferenceDownloaderPlugin(DownloaderPlugin):
 
         Returns
         -------
-        dict
-            Downloaded data in format:
-            {
-                'count': int,
-                'next': None,
-                'previous': None,
-                'results': [list of papers]
-            }
+        list of LightweightPaper
+            List of validated paper objects ready for database insertion
 
         Raises
         ------
@@ -123,9 +117,10 @@ class JSONConferenceDownloaderPlugin(DownloaderPlugin):
                 try:
                     with open(output_file, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                    logger.info(f"Successfully loaded {data.get('count', 0)} papers from local file")
-                    return data
-                except (json.JSONDecodeError, IOError) as e:
+                    papers = [LightweightPaper(**paper) for paper in data]
+                    logger.info(f"Successfully loaded {len(papers)} papers from local file")
+                    return papers
+                except (json.JSONDecodeError, IOError, Exception) as e:
                     logger.warning(f"Failed to load local file: {str(e)}. Downloading from URL...")
 
         logger.info(f"Downloading {self.conference_name} {year} data...")
@@ -146,28 +141,34 @@ class JSONConferenceDownloaderPlugin(DownloaderPlugin):
             raise RuntimeError(f"Invalid JSON response from {url}: {str(e)}") from e
 
         # Convert papers to lightweight schema
+        papers_data = []
         if "results" in data and isinstance(data["results"], list):
             # Add year and conference fields before conversion
             for paper in data["results"]:
                 paper["year"] = year
                 paper["conference"] = self.conference_name
 
-            # Convert to lightweight schema
-            data["results"] = convert_neurips_to_lightweight_schema(
+            # Convert to lightweight schema (returns list of dicts)
+            papers_data = convert_neurips_to_lightweight_schema(
                 data["results"], preserve_ids=False  # Let database generate IDs
             )
+
+        # Convert to LightweightPaper objects
+        papers = [LightweightPaper(**paper) for paper in papers_data]
 
         # Save to file if path provided
         if output_path:
             output_file = Path(output_path)
             output_file.parent.mkdir(parents=True, exist_ok=True)
+            # Save as list of dicts for readability
+            papers_json = [paper.model_dump() for paper in papers]
             with open(output_file, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+                json.dump(papers_json, f, indent=2, ensure_ascii=False)
             logger.info(f"Saved JSON data to: {output_file}")
 
-        logger.info(f"Successfully downloaded {data.get('count', 0)} papers from {self.conference_name} {year}")
+        logger.info(f"Successfully downloaded {len(papers)} papers from {self.conference_name} {year}")
 
-        return data
+        return papers
 
     def get_metadata(self) -> Dict[str, Any]:
         """

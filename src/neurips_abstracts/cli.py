@@ -568,15 +568,15 @@ def download_command(args: argparse.Namespace) -> int:
 
         # Download data using plugin
         json_path = output_path.parent / f"{plugin_name}_{args.year}.json"
-        data = plugin.download(year=args.year, output_path=str(json_path), force_download=args.force, **kwargs)
+        papers = plugin.download(year=args.year, output_path=str(json_path), force_download=args.force, **kwargs)
 
-        print(f"✅ Downloaded {data.get('count', 0):,} papers")
+        print(f"✅ Downloaded {len(papers):,} papers")
 
         # Create database
         print(f"\n📊 Creating database: {output_path}")
         with DatabaseManager(output_path) as db:
             db.create_tables()
-            count = db.load_json_data(data)
+            count = db.add_papers(papers)
             print(f"✅ Loaded {count:,} papers into database")
 
         print(f"\n💾 Database saved to: {output_path}")

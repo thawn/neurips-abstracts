@@ -258,12 +258,12 @@ class TestDatabaseYearConferenceIntegration:
         plugin = NeurIPSDownloaderPlugin()
         data = plugin.download(year=2024)
 
-        # Create temporary database and load data
+        # Create temporary database and load data (data is now List[LightweightPaper])
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with DatabaseManager(db_path) as db:
                 db.create_tables()
-                db.load_json_data(data)
+                db.add_papers(data)
 
                 # Query papers and verify year and conference
                 papers = db.query("SELECT id, name, year, conference FROM papers ORDER BY id")
@@ -317,7 +317,11 @@ class TestDatabaseYearConferenceIntegration:
         lightweight_papers = plugin._convert_to_lightweight_format(papers)
 
         # Convert to full schema
-        from neurips_abstracts.plugin import convert_lightweight_to_neurips_schema
+        from neurips_abstracts.plugin import (
+            convert_lightweight_to_neurips_schema,
+            convert_neurips_to_lightweight_schema,
+            LightweightPaper,
+        )
 
         data = convert_lightweight_to_neurips_schema(
             lightweight_papers,
@@ -326,12 +330,18 @@ class TestDatabaseYearConferenceIntegration:
             source_url="https://ml4physicalsciences.github.io/2025/",
         )
 
+        # Convert back to LightweightPaper objects for insertion
+        lightweight_dicts = [
+            convert_neurips_to_lightweight_schema(paper, year=2025, conference="ML4PS@Neurips") for paper in data
+        ]
+        papers_to_insert = [LightweightPaper(**paper_dict) for paper_dict in lightweight_dicts]
+
         # Create temporary database and load data
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with DatabaseManager(db_path) as db:
                 db.create_tables()
-                db.load_json_data(data)
+                db.add_papers(papers_to_insert)
 
                 # Query papers and verify year and conference
                 papers = db.query("SELECT id, name, year, conference FROM papers ORDER BY id")

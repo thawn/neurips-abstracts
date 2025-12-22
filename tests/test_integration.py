@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from neurips_abstracts import download_json, DatabaseManager
 from neurips_abstracts.downloader import download_neurips_data
+from neurips_abstracts.plugin import LightweightPaper, convert_neurips_to_lightweight_schema
 from tests.test_helpers import requires_lm_studio
 
 # Fixtures imported from conftest.py:
@@ -35,10 +36,15 @@ class TestIntegration:
         assert data == sample_neurips_data
         assert json_file.exists()
 
-        # Step 2: Load into database (data is a list from conftest.py)
+        # Step 2: Convert JSON data to LightweightPaper objects and load into database
+        lightweight_dicts = [
+            convert_neurips_to_lightweight_schema(paper, year=2025, conference="NeurIPS") for paper in data
+        ]
+        papers = [LightweightPaper(**paper_dict) for paper_dict in lightweight_dicts]
+
         with DatabaseManager(db_file) as db:
             db.create_tables()
-            count = db.load_json_data(data)
+            count = db.add_papers(papers)
 
             assert count == 2
             assert db.get_paper_count() == 2
@@ -61,10 +67,15 @@ class TestIntegration:
         with patch("neurips_abstracts.downloader.requests.get", return_value=mock_response):
             data = download_neurips_data(year=2025)
 
-        # Load into database (data is a list from conftest.py)
+        # Convert JSON data to LightweightPaper objects and load into database
+        lightweight_dicts = [
+            convert_neurips_to_lightweight_schema(paper, year=2025, conference="NeurIPS") for paper in data
+        ]
+        papers = [LightweightPaper(**paper_dict) for paper_dict in lightweight_dicts]
+
         with DatabaseManager(db_file) as db:
             db.create_tables()
-            count = db.load_json_data(data)
+            count = db.add_papers(papers)
 
             assert count == 2
 
@@ -95,9 +106,15 @@ class TestIntegration:
         with patch("neurips_abstracts.downloader.requests.get", return_value=mock_response):
             data = download_neurips_data()
 
+        # Convert JSON data to LightweightPaper objects
+        lightweight_dicts = [
+            convert_neurips_to_lightweight_schema(paper, year=2025, conference="NeurIPS") for paper in data
+        ]
+        papers = [LightweightPaper(**paper_dict) for paper_dict in lightweight_dicts]
+
         with DatabaseManager(db_file) as db:
             db.create_tables()
-            db.load_json_data(data)
+            db.add_papers(papers)
 
         # Query in second connection
         with DatabaseManager(db_file) as db:
@@ -486,12 +503,19 @@ class TestIntegration:
 
         db_file = tmp_path / "neurips_real_subset.db"
 
+        # Convert JSON data to LightweightPaper objects
+        raw_papers = real_data.get("results", real_data)  # Handle both dict and list formats
+        lightweight_dicts = [
+            convert_neurips_to_lightweight_schema(paper, year=2025, conference="NeurIPS") for paper in raw_papers
+        ]
+        papers = [LightweightPaper(**paper_dict) for paper_dict in lightweight_dicts]
+
         with DatabaseManager(db_file) as db:
             # Create tables
             db.create_tables()
 
             # Load the real data subset
-            count = db.load_json_data(real_data)
+            count = db.add_papers(papers)
             assert count == 7, f"Expected 7 papers, got {count}"
 
             # Verify total counts
@@ -628,10 +652,17 @@ class TestIntegration:
         db_file = tmp_path / "neurips_embeddings.db"
         chroma_path = tmp_path / "test_chroma_db"
 
+        # Convert JSON data to LightweightPaper objects
+        raw_papers = real_data.get("results", real_data)  # Handle both dict and list formats
+        lightweight_dicts = [
+            convert_neurips_to_lightweight_schema(paper, year=2025, conference="NeurIPS") for paper in raw_papers
+        ]
+        papers = [LightweightPaper(**paper_dict) for paper_dict in lightweight_dicts]
+
         # Step 1: Load papers into database
         with DatabaseManager(db_file) as db:
             db.create_tables()
-            count = db.load_json_data(real_data)
+            count = db.add_papers(papers)
             assert count == 7
             assert db.get_paper_count() == 7
 
