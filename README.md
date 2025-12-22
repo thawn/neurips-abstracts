@@ -18,7 +18,7 @@ A Python package for downloading NeurIPS conference data and loading it into a S
 
 ### Requirements
 
-- Python 3.8+
+- Python 3.11+
 - [uv](https://docs.astral.sh/uv/) - Fast Python package installer and resolver
 - Node.js 14+ (for web UI)
 
@@ -632,3 +632,9 @@ with EmbeddingsManager() as em, DatabaseManager("neurips.db") as db:
 - Further RAG improvements
   - consider [multi-turn conversation refinement](https://www.emergentmind.com/topics/multi-turn-rag-conversations)
   - Implement citation extraction and validation
+- sqlite database: switch our central database schema from the complicated neurips schema to the lightweight schema used by ml4ps: 
+  Store authors as a comma separated list of names in one authors column.
+  The title of the paper should be stored in a field title (not name like in the neurips schema).
+  The uid for each paper should be generated as a hash from the title+original_id the original uid (if present in the scraped data) should be stored in an optional column original_id
+  
+  make sure to adapt all parts of the code to use the new schema.

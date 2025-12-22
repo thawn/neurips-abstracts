@@ -520,7 +520,7 @@ See `.gitignore`:
 
 - **Name**: neurips-abstracts
 - **Version**: 0.1.0
-- **Python**: >=3.8
+- **Python**: >=3.11
 - **License**: MIT
 - **CLI Command**: `neurips-abstracts`
 
