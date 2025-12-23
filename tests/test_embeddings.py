@@ -496,3 +496,51 @@ class TestEmbeddingsManager:
         assert paper_1_metadata["session"] == "ML Session 1"
 
         embeddings_manager.close()
+
+    def test_paper_exists(self, embeddings_manager, mock_lm_studio):
+        """Test paper_exists method."""
+        embeddings_manager.connect()
+        embeddings_manager.create_collection()
+
+        # Initially paper should not exist
+        assert not embeddings_manager.paper_exists("test_paper_1")
+
+        # Add a paper
+        embeddings_manager.add_paper(
+            paper_id="test_paper_1", abstract="This is a test abstract", metadata={"title": "Test Paper"}
+        )
+
+        # Now paper should exist
+        assert embeddings_manager.paper_exists("test_paper_1")
+
+        # Other papers should not exist
+        assert not embeddings_manager.paper_exists("test_paper_2")
+
+        embeddings_manager.close()
+
+    def test_paper_exists_collection_not_initialized(self, embeddings_manager):
+        """Test paper_exists raises error when collection not initialized."""
+        with pytest.raises(EmbeddingsError, match="Collection not initialized"):
+            embeddings_manager.paper_exists("test_paper_1")
+
+    def test_embed_from_database_skip_existing(self, embeddings_manager, test_database, mock_lm_studio):
+        """Test that embed_from_database skips papers that already exist."""
+        embeddings_manager.connect()
+        embeddings_manager.create_collection()
+
+        # First run - should embed 2 papers
+        count = embeddings_manager.embed_from_database(test_database)
+        assert count == 2
+
+        stats = embeddings_manager.get_collection_stats()
+        assert stats["count"] == 2
+
+        # Second run - should skip all existing papers and embed 0 new ones
+        count = embeddings_manager.embed_from_database(test_database)
+        assert count == 0
+
+        # Collection count should still be 2
+        stats = embeddings_manager.get_collection_stats()
+        assert stats["count"] == 2
+
+        embeddings_manager.close()

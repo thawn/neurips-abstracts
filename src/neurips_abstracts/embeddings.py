@@ -265,6 +265,48 @@ class EmbeddingsManager:
         except Exception as e:
             raise EmbeddingsError(f"Failed to create collection: {str(e)}") from e
 
+    def paper_exists(self, paper_id: Union[int, str]) -> bool:
+        """
+        Check if a paper already exists in the collection.
+
+        Parameters
+        ----------
+        paper_id : int or str
+            Unique identifier for the paper.
+
+        Returns
+        -------
+        bool
+            True if paper exists in collection, False otherwise.
+
+        Raises
+        ------
+        EmbeddingsError
+            If collection not initialized.
+
+        Examples
+        --------
+        >>> em = EmbeddingsManager()
+        >>> em.connect()
+        >>> em.create_collection()
+        >>> em.paper_exists(1)
+        False
+        >>> em.add_paper(1, "Abstract text")
+        >>> em.paper_exists(1)
+        True
+        """
+        if not self.collection:
+            raise EmbeddingsError("Collection not initialized. Call create_collection() first.")
+
+        try:
+            # Try to get the paper by ID
+            result = self.collection.get(ids=[str(paper_id)])
+            # If the result has any IDs, the paper exists
+            return len(result["ids"]) > 0
+        except Exception as e:
+            logger.warning(f"Error checking if paper {paper_id} exists: {str(e)}")
+            return False
+
     def add_paper(
         self,
         paper_id: Union[int, str],
@@ -500,12 +542,22 @@ class EmbeddingsManager:
 
             # Process papers one by one
             embedded_count = 0
+            skipped_count = 0
             for i, row in enumerate(rows):
                 paper_id = row["uid"]
                 abstract = row["abstract"]
 
                 if not abstract or not abstract.strip():
                     logger.warning(f"Skipping paper {paper_id}: no abstract")
+                    continue
+
+                # Check if paper already exists in the collection
+                if self.paper_exists(paper_id):
+                    logger.debug(f"Skipping paper {paper_id}: already exists in collection")
+                    skipped_count += 1
+                    # Still call progress callback to update the progress bar
+                    if progress_callback:
+                        progress_callback(i + 1, total)
                     continue
 
                 metadata = {
@@ -528,7 +580,7 @@ class EmbeddingsManager:
                     continue
 
             conn.close()
-            logger.info(f"Successfully embedded {embedded_count} papers")
+            logger.info(f"Successfully embedded {embedded_count} papers, skipped {skipped_count} existing papers")
             return embedded_count
 
         except sqlite3.Error as e:
