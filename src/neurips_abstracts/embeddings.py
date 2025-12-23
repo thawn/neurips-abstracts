@@ -545,7 +545,7 @@ class EmbeddingsManager:
             skipped_count = 0
             for i, row in enumerate(rows):
                 paper_id = row["uid"]
-                abstract = row["abstract"]
+                abstract = f"{row['title']}\n\n{row['abstract']}"
 
                 if not abstract or not abstract.strip():
                     logger.warning(f"Skipping paper {paper_id}: no abstract")
