@@ -575,7 +575,7 @@ class EmbeddingsManager:
             columns = {row[1] for row in cursor.fetchall()}
 
             # Build query with lightweight schema fields
-            base_columns = ["id", "title", "abstract", "authors", "keywords", "session"]
+            base_columns = ["uid", "title", "abstract", "authors", "keywords", "session"]
 
             query = f"SELECT {', '.join(base_columns)} FROM papers"
             if where_clause:
@@ -594,7 +594,7 @@ class EmbeddingsManager:
             # Prepare papers for batch processing
             papers = []
             for row in rows:
-                paper_id = row["id"]
+                paper_id = row["uid"]
                 abstract = row["abstract"]
 
                 if not abstract or not abstract.strip():
