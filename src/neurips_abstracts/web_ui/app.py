@@ -197,7 +197,7 @@ def get_filters():
     Returns
     -------
     dict
-        Dictionary with sessions, topics, eventtypes, years, and conferences lists
+        Dictionary with sessions, years, and conferences lists
     """
     try:
         # Get optional query parameters
@@ -277,8 +277,6 @@ def search():
     - use_embeddings: bool - Use semantic search
     - limit: int - Maximum results (default: 10)
     - sessions: list[str] - Filter by sessions (optional)
-    - topics: list[str] - Filter by topics (optional)
-    - eventtypes: list[str] - Filter by event types (optional)
     - years: list[int] - Filter by years (optional)
     - conferences: list[str] - Filter by conferences (optional)
 
@@ -293,8 +291,6 @@ def search():
         use_embeddings = data.get("use_embeddings", False)
         limit = data.get("limit", 10)
         sessions = data.get("sessions", [])
-        topics = data.get("topics", [])
-        eventtypes = data.get("eventtypes", [])
         years = data.get("years", [])
         conferences = data.get("conferences", [])
 
@@ -310,10 +306,6 @@ def search():
             filter_conditions = []
             if sessions:
                 filter_conditions.append({"session": {"$in": sessions}})
-            if topics:
-                filter_conditions.append({"topic": {"$in": topics}})
-            if eventtypes:
-                filter_conditions.append({"eventtype": {"$in": eventtypes}})
             if years:
                 # Convert years to integers for ChromaDB
                 year_ints = [int(y) for y in years]
@@ -328,9 +320,7 @@ def search():
             elif len(filter_conditions) == 1:
                 where_filter = filter_conditions[0]
 
-            logger.info(
-                f"Search filter: sessions={sessions}, topics={topics}, eventtypes={eventtypes}, years={years}, conferences={conferences}"
-            )
+            logger.info(f"Search filter: sessions={sessions}, years={years}, conferences={conferences}")
             logger.info(f"Where filter: {where_filter}")
 
             results = em.search_similar(query, n_results=limit * 2, where=where_filter)  # Get more results to filter
@@ -352,8 +342,6 @@ def search():
             papers = database.search_papers(
                 keyword=query,
                 sessions=sessions,
-                topics=topics,
-                eventtypes=eventtypes,
                 years=years,
                 conferences=conferences,
                 limit=limit,
@@ -451,8 +439,6 @@ def chat():
     - n_papers: int (optional) - Number of papers for context
     - reset: bool (optional) - Reset conversation
     - sessions: list (optional) - Filter by sessions
-    - topics: list (optional) - Filter by topics
-    - eventtypes: list (optional) - Filter by event types
     - years: list (optional) - Filter by years
     - conferences: list (optional) - Filter by conferences
 
@@ -470,8 +456,6 @@ def chat():
 
         # Get filters
         sessions = data.get("sessions", [])
-        topics = data.get("topics", [])
-        eventtypes = data.get("eventtypes", [])
         years = data.get("years", [])
         conferences = data.get("conferences", [])
 
@@ -487,10 +471,6 @@ def chat():
         filter_conditions = []
         if sessions:
             filter_conditions.append({"session": {"$in": sessions}})
-        if topics:
-            filter_conditions.append({"topic": {"$in": topics}})
-        if eventtypes:
-            filter_conditions.append({"eventtype": {"$in": eventtypes}})
         if years:
             # Convert years to integers for ChromaDB
             year_ints = [int(y) for y in years]
@@ -650,12 +630,12 @@ def download_and_embed():
             existing_papers = {}
             if is_update:
                 existing_rows = database.query(
-                    "SELECT id, uid, title, abstract FROM papers WHERE year = ? AND conference = ?",
+                    "SELECT uid, title, abstract FROM papers WHERE year = ? AND conference = ?",
                     (year, conference),
                 )
                 # Map by uid (unique identifier) for easy lookup
                 existing_papers = {
-                    row["uid"]: {"id": row["id"], "title": row["title"], "abstract": row["abstract"]}
+                    row["uid"]: {"title": row["title"], "abstract": row["abstract"]}
                     for row in existing_rows
                     if row["uid"]
                 }
@@ -670,12 +650,12 @@ def download_and_embed():
 
             # Get papers after update and determine which ones changed
             all_papers = database.query(
-                "SELECT id, uid, title, abstract, year, conference FROM papers WHERE year = ? AND conference = ?",
+                "SELECT uid, title, abstract, year, conference FROM papers WHERE year = ? AND conference = ?",
                 (year, conference),
             )
 
             # Get existing embeddings from ChromaDB to check what's missing
-            all_paper_ids = [str(p["id"]) for p in all_papers]
+            all_paper_ids = [str(p["uid"]) for p in all_papers]
             existing_embeddings = set()
             try:
                 # Query ChromaDB to see which papers already have embeddings
@@ -693,12 +673,12 @@ def download_and_embed():
             papers_to_embed = []
             for paper in all_papers:
                 uid = paper["uid"]
-                paper_id_str = str(paper["uid"])
+                paper_uid_str = str(paper["uid"])  # Use uid for ChromaDB check
 
                 if not uid or uid not in existing_papers:
                     # New paper - needs embedding
                     papers_to_embed.append(paper)
-                elif paper_id_str not in existing_embeddings:
+                elif paper_uid_str not in existing_embeddings:
                     # Missing embedding - needs embedding
                     papers_to_embed.append(paper)
                 else:
@@ -723,36 +703,36 @@ def download_and_embed():
                 yield f"data: {json.dumps(complete_msg)}\n\n"
                 return
 
-            # Get paper IDs for papers that need embedding
-            paper_ids = [p["id"] for p in papers_to_embed]
+            # Get paper UIDs for papers that need embedding
+            paper_uids = [p["uid"] for p in papers_to_embed]
 
             # Delete existing embeddings for papers that will be re-embedded
-            logger.info(f"Removing old embeddings for {len(paper_ids)} papers")
+            logger.info(f"Removing old embeddings for {len(paper_uids)} papers")
             embed_prep_msg = {
                 "stage": "embeddings",
                 "progress": 0,
-                "message": f"Preparing to embed {len(paper_ids)} papers (new/changed/missing)...",
+                "message": f"Preparing to embed {len(paper_uids)} papers (new/changed/missing)...",
             }
             yield f"data: {json.dumps(embed_prep_msg)}\n\n"
 
             # Only delete embeddings that exist
-            if paper_ids:
-                em.collection.delete(ids=[str(pid) for pid in paper_ids])
+            if paper_uids:
+                em.collection.delete(ids=[str(uid) for uid in paper_uids])
 
             # Create new embeddings
-            logger.info(f"Creating embeddings for {len(paper_ids)} papers")
+            logger.info(f"Creating embeddings for {len(paper_uids)} papers")
             embedded_count = 0
             batch_size = 50
             total_papers = len(papers_to_embed)
 
             for i in range(0, len(papers_to_embed), batch_size):
                 batch = papers_to_embed[i : i + batch_size]
-                batch_ids = [p["id"] for p in batch]
-                batch_texts = [f"Title: {p['name']}\n\nAbstract: {p['abstract']}" for p in batch]
+                batch_ids = [p["uid"] for p in batch]
+                batch_texts = [f"Title: {p['title']}\n\nAbstract: {p['abstract']}" for p in batch]
                 batch_metadatas = [
                     {
-                        "paper_id": str(p["id"]),
-                        "title": p["name"],
+                        "paper_id": str(p["uid"]),
+                        "title": p["title"],
                         "year": str(p["year"] if p["year"] else ""),
                         "conference": p["conference"] if p["conference"] else "",
                     }

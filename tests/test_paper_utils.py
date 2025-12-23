@@ -27,7 +27,7 @@ class TestGetPaperWithAuthors:
                 "uid": "abc123",
                 "title": "Test Paper",
                 "abstract": "Test abstract",
-                "authors": "John Doe, Jane Smith",
+                "authors": "John Doe; Jane Smith",
                 "session": "ML",
             }
         ]

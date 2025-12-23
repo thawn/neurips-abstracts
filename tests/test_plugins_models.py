@@ -84,7 +84,7 @@ class TestLightweightPaper:
         with pytest.raises(ValidationError, match="Authors list cannot be empty"):
             LightweightPaper(
                 title="Test Paper",
-                authors=["Test Author"],
+                authors=[],  # Empty authors list should raise error
                 abstract="Abstract",
                 session="Session",
                 poster_position="A1",
@@ -99,7 +99,7 @@ class TestLightweightPaper:
                 title="Test Paper",
                 authors=["John Doe"],
                 abstract="Abstract",
-                session="Test Session",
+                session="",  # Empty session should raise error
                 poster_position="A1",
                 year=2025,
                 conference="NeurIPS",

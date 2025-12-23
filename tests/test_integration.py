@@ -37,9 +37,8 @@ class TestIntegration:
         assert json_file.exists()
 
         # Step 2: Convert JSON data to LightweightPaper objects and load into database
-        lightweight_dicts = [
-            convert_neurips_to_lightweight_schema(paper, year=2025, conference="NeurIPS") for paper in data
-        ]
+        # Note: convert_neurips_to_lightweight_schema extracts year/conference from paper data
+        lightweight_dicts = convert_neurips_to_lightweight_schema(data)
         papers = [LightweightPaper(**paper_dict) for paper_dict in lightweight_dicts]
 
         with DatabaseManager(db_file) as db:
@@ -49,15 +48,15 @@ class TestIntegration:
             assert count == 2
             assert db.get_paper_count() == 2
 
-            # Step 3: Query the data by eventtype (new schema)
-            # Note: conftest.py sample data has "Poster" and "Oral" papers
-            poster_papers = db.search_papers(eventtype="Poster")
-            assert len(poster_papers) == 1
-            assert poster_papers[0]["name"] == "Deep Learning with Neural Networks"
+            # Step 3: Query the data by session (lightweight schema)
+            # Note: conftest.py sample data has papers in "Session A" and "Session B"
+            session_a_papers = db.search_papers(session="Session A")
+            assert len(session_a_papers) == 1
+            assert session_a_papers[0]["title"] == "Deep Learning with Neural Networks"
 
-            oral_papers = db.search_papers(eventtype="Oral")
-            assert len(oral_papers) == 1
-            assert oral_papers[0]["name"] == "Advances in Computer Vision"
+            session_b_papers = db.search_papers(session="Session B")
+            assert len(session_b_papers) == 1
+            assert session_b_papers[0]["title"] == "Advances in Computer Vision"
 
     def test_download_neurips_and_load(self, tmp_path, mock_response, sample_neurips_data):
         """Test using the convenience function for NeurIPS data."""
@@ -68,9 +67,7 @@ class TestIntegration:
             data = download_neurips_data(year=2025)
 
         # Convert JSON data to LightweightPaper objects and load into database
-        lightweight_dicts = [
-            convert_neurips_to_lightweight_schema(paper, year=2025, conference="NeurIPS") for paper in data
-        ]
+        lightweight_dicts = convert_neurips_to_lightweight_schema(data)
         papers = [LightweightPaper(**paper_dict) for paper_dict in lightweight_dicts]
 
         with DatabaseManager(db_file) as db:
@@ -95,7 +92,7 @@ class TestIntegration:
             results = db.search_papers(keyword="anything")
             assert len(results) == 0
 
-            results = db.search_papers(eventtype="Oral")
+            results = db.search_papers(session="Session A")
             assert len(results) == 0
 
     def test_database_persistence(self, tmp_path, mock_response, sample_neurips_data):
@@ -107,9 +104,7 @@ class TestIntegration:
             data = download_neurips_data()
 
         # Convert JSON data to LightweightPaper objects
-        lightweight_dicts = [
-            convert_neurips_to_lightweight_schema(paper, year=2025, conference="NeurIPS") for paper in data
-        ]
+        lightweight_dicts = convert_neurips_to_lightweight_schema(data)
         papers = [LightweightPaper(**paper_dict) for paper_dict in lightweight_dicts]
 
         with DatabaseManager(db_file) as db:
@@ -505,9 +500,13 @@ class TestIntegration:
 
         # Convert JSON data to LightweightPaper objects
         raw_papers = real_data.get("results", real_data)  # Handle both dict and list formats
-        lightweight_dicts = [
-            convert_neurips_to_lightweight_schema(paper, year=2025, conference="NeurIPS") for paper in raw_papers
-        ]
+
+        # Add year and conference to each paper (required by LightweightPaper)
+        for paper in raw_papers:
+            paper["year"] = 2025
+            paper["conference"] = "NeurIPS"
+
+        lightweight_dicts = convert_neurips_to_lightweight_schema(raw_papers)
         papers = [LightweightPaper(**paper_dict) for paper_dict in lightweight_dicts]
 
         with DatabaseManager(db_file) as db:
@@ -521,44 +520,34 @@ class TestIntegration:
             # Verify total counts
             assert db.get_paper_count() == 7
 
-            # Test 1: Query by decision type
-            oral_papers = db.search_papers(decision="Accept (oral)")
-            assert len(oral_papers) == 1
-            assert (
-                oral_papers[0]["name"] == "DisCO: Reinforcing Large Reasoning Models with Discriminative Constraints"
-            )
+            # Test 1: Query by session (lightweight schema uses session field)
+            # The test data has various sessions, we can verify we get results
+            all_papers = db.search_papers()
+            assert len(all_papers) == 7
 
-            poster_papers = db.search_papers(decision="Accept (poster)")
-            assert len(poster_papers) == 5  # Papers 1, 2, 5, 6, 7
+            # Test 2: Search for specific paper by keyword
+            disco_papers = db.search_papers(keyword="DisCO")
+            assert len(disco_papers) >= 1
 
-            spotlight_papers = db.search_papers(decision="Accept (spotlight)")
-            assert len(spotlight_papers) == 1
-            assert spotlight_papers[0]["name"].startswith("Nonlinear Laplacians")
+            # Test 3: Search by year
+            papers_2025 = db.search_papers(year=2025)
+            assert len(papers_2025) == 7
 
-            # Test 2: Query by event type
-            oral_events = db.search_papers(eventtype="Oral")
-            assert len(oral_events) == 1
-
-            poster_events = db.search_papers(eventtype="Poster")
-            assert len(poster_events) == 5  # Papers 1, 2, 5, 6, 7
-
-            spotlight_events = db.search_papers(eventtype="Spotlight")
-            assert len(spotlight_events) == 1
+            # Test 4: Search by conference
+            neurips_papers = db.search_papers(conference="NeurIPS")
+            assert len(neurips_papers) == 7
 
             # Test 3: Keyword search
             graph_papers = db.search_papers(keyword="graph")
             assert len(graph_papers) >= 1
-            assert any("Graph" in p["name"] for p in graph_papers)
+            assert any("Graph" in p["title"] for p in graph_papers)
 
             learning_papers = db.search_papers(keyword="learning")
             assert len(learning_papers) >= 1
 
-            # Test 4: Topic search (exact match)
-            vision_papers = db.search_papers(topic="Applications->Vision")
-            assert len(vision_papers) >= 1
-
-            theory_papers = db.search_papers(topic="Theory->Learning Theory")
-            assert len(theory_papers) >= 1
+            # Test 4: Search by keywords related to different areas
+            graph_papers_2 = db.search_papers(keyword="representation")
+            assert len(graph_papers_2) >= 1
 
             # Test 5: Verify author extraction and relationships
             # Check author count
@@ -566,68 +555,31 @@ class TestIntegration:
             # 7 + 1 + 9 + 2 + 3 + 2 + 5 = 29 unique authors
             assert author_count == 29, f"Expected 29 unique authors, got {author_count}"
 
-            # Test 6: Get authors for specific papers
-            # Paper with 7 authors
-            authors_paper1 = db.get_paper_authors(119718)
-            assert len(authors_paper1) == 7
-            assert authors_paper1[0]["fullname"] == "Miaomiao Huang"
-            assert authors_paper1[0]["institution"] == "Northeastern University"
+            # Test 6: Verify author data is stored correctly
+            # Get papers and check their author strings
+            papers = db.search_papers()
+            paper1 = next((p for p in papers if p["original_id"] == "119718"), None)
+            assert paper1 is not None
+            # Authors are stored as semicolon-separated string
+            assert "Miaomiao Huang" in paper1["authors"]
+            assert "Yuhai Zhao" in paper1["authors"]
 
             # Paper with single author
-            authors_paper2 = db.get_paper_authors(119663)
-            assert len(authors_paper2) == 1
-            assert authors_paper2[0]["fullname"] == "Xi ruida"
+            paper2 = next((p for p in papers if p["original_id"] == "119663"), None)
+            assert paper2 is not None
+            assert "Xi ruida" in paper2["authors"]
 
-            # Paper with 9 authors (oral presentation)
-            authors_paper3 = db.get_paper_authors(114995)
-            assert len(authors_paper3) == 9
-            assert authors_paper3[0]["fullname"] == "Gang Li"
-
-            # Test 7: Search authors by institution
-            northeastern_authors = db.search_authors(institution="Northeastern")
-            assert len(northeastern_authors) >= 5  # At least 5 from first paper
-
-            # Test 8: Search authors by name
-            wang_authors = db.search_authors(name="Wang")
-            assert len(wang_authors) >= 3  # Multiple Wang authors in first paper
-
-            # Test 9: Get papers by author
-            # Find an author and get their papers
-            miaomiao = db.search_authors(name="Miaomiao Huang")
-            assert len(miaomiao) == 1
-            miaomiao_papers = db.get_author_papers(miaomiao[0]["id"])
-            assert len(miaomiao_papers) >= 1
-
-            # Test 10: Handle papers with null/empty fields
-            # Check that paper with null topic is handled
-            papers_with_null_topic = db.query("SELECT * FROM papers WHERE topic IS NULL")
-            assert len(papers_with_null_topic) >= 1
-
-            # Test 11: Verify empty keywords are handled correctly
+            # Test 7: Verify empty keywords are handled correctly
             papers_with_no_keywords = db.query(
                 "SELECT * FROM papers WHERE keywords = '' OR keywords IS NULL OR keywords = '[]'"
             )
             assert len(papers_with_no_keywords) == 5  # Papers 1-5 have no keywords
 
-            # Test 11b: Verify papers with keywords
+            # Test 8: Verify papers with keywords
             papers_with_keywords = db.query(
                 "SELECT * FROM papers WHERE keywords != '' AND keywords IS NOT NULL AND keywords != '[]'"
             )
             assert len(papers_with_keywords) == 2  # Papers 6 and 7 have keywords
-
-            # Test 12: Verify authors with missing institutions
-            authors_no_institution = db.query("SELECT * FROM authors WHERE institution IS NULL OR institution = ''")
-            assert len(authors_no_institution) >= 2  # From paper 5
-
-            # Test 13: Verify author order is preserved
-            paper5_authors = db.get_paper_authors(119801)
-            assert len(paper5_authors) == 3
-            assert paper5_authors[0]["author_order"] == 1
-            assert paper5_authors[1]["author_order"] == 2
-            assert paper5_authors[2]["author_order"] == 3
-            assert paper5_authors[0]["fullname"] == "John Doe"
-            assert paper5_authors[1]["fullname"] == "Jane Smith"
-            assert paper5_authors[2]["fullname"] == "Bob Johnson"
 
     @requires_lm_studio
     def test_embeddings_end_to_end_with_real_data(self, tmp_path):
@@ -654,9 +606,7 @@ class TestIntegration:
 
         # Convert JSON data to LightweightPaper objects
         raw_papers = real_data.get("results", real_data)  # Handle both dict and list formats
-        lightweight_dicts = [
-            convert_neurips_to_lightweight_schema(paper, year=2025, conference="NeurIPS") for paper in raw_papers
-        ]
+        lightweight_dicts = convert_neurips_to_lightweight_schema(raw_papers)
         papers = [LightweightPaper(**paper_dict) for paper_dict in lightweight_dicts]
 
         # Step 1: Load papers into database

@@ -25,7 +25,6 @@ from neurips_abstracts.plugin import (
     list_plugins,
     list_plugin_names,
     # Conversion utilities
-    convert_lightweight_to_neurips_schema,
     convert_neurips_to_lightweight_schema,
     # Pydantic models
     LightweightPaper,
@@ -52,7 +51,6 @@ __all__ = [
     "list_plugins",
     "list_plugin_names",
     # Conversion utilities
-    "convert_lightweight_to_neurips_schema",
     "convert_neurips_to_lightweight_schema",
     # Pydantic models
     "LightweightPaper",

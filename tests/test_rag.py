@@ -25,50 +25,45 @@ from tests.test_helpers import requires_lm_studio
 
 @pytest.fixture
 def mock_database():
-    """Create a mock database manager that returns papers for IDs 1, 2, 3."""
+    """Create a mock database manager that returns papers for UIDs "1", "2", "3"."""
     mock_db = Mock()
 
-    # Set up mock to return papers based on ID
+    # Set up mock to return papers based on UID (string)
     def mock_query_side_effect(sql, params):
-        paper_id = params[0]
+        paper_uid = params[0] if params else None
         papers_map = {
-            1: {
-                "id": 1,
-                "name": "Attention Is All You Need",
+            "1": {
+                "uid": "1",
+                "title": "Attention Is All You Need",
                 "abstract": "We propose the Transformer...",
-                "topic": "Deep Learning",
-                "decision": "Accept (oral)",
+                "authors": "Vaswani et al.",  # Stored as semicolon-separated string in DB
+                "session": "Oral",
+                "year": 2017,
+                "conference": "NeurIPS",
             },
-            2: {
-                "id": 2,
-                "name": "BERT: Pre-training of Deep Bidirectional Transformers",
+            "2": {
+                "uid": "2",
+                "title": "BERT: Pre-training of Deep Bidirectional Transformers",
                 "abstract": "We introduce BERT...",
-                "topic": "NLP",
-                "decision": "Accept (poster)",
+                "authors": "Devlin et al.",
+                "session": "Poster",
+                "year": 2019,
+                "conference": "NeurIPS",
             },
-            3: {
-                "id": 3,
-                "name": "GPT-3: Language Models are Few-Shot Learners",
+            "3": {
+                "uid": "3",
+                "title": "GPT-3: Language Models are Few-Shot Learners",
                 "abstract": "We train GPT-3...",
-                "topic": "Language Models",
-                "decision": "Accept (oral)",
+                "authors": "Brown et al.",
+                "session": "Oral",
+                "year": 2020,
+                "conference": "NeurIPS",
             },
         }
-        paper = papers_map.get(paper_id)
+        paper = papers_map.get(paper_uid)
         return [paper] if paper else []
 
     mock_db.query.side_effect = mock_query_side_effect
-
-    # Set up authors mock
-    def mock_authors_side_effect(paper_id):
-        authors_map = {
-            1: [{"fullname": "Vaswani et al."}],
-            2: [{"fullname": "Devlin et al."}],
-            3: [{"fullname": "Brown et al."}],
-        }
-        return authors_map.get(paper_id, [])
-
-    mock_db.get_paper_authors.side_effect = mock_authors_side_effect
 
     return mock_db
 
@@ -450,7 +445,7 @@ class TestRAGChatIntegration:
         cursor = db.connection.cursor()
         cursor.execute(
             """
-            INSERT INTO papers (uid, name, abstract, decision, topic, keywords)
+            INSERT INTO papers (uid, title, abstract, decision, topic, keywords)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             (

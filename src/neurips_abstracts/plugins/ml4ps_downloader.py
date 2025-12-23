@@ -20,7 +20,6 @@ from threading import Lock
 
 from neurips_abstracts.plugin import (
     LightweightDownloaderPlugin,
-    convert_lightweight_to_neurips_schema,
     LightweightPaper,
 )
 

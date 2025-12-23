@@ -220,8 +220,6 @@ class TestCLI:
                     str(db_path),
                     "--output",
                     str(tmp_path / "embeddings"),
-                    "--batch-size",
-                    "10",
                 ],
             ):
                 exit_code = main()
@@ -1136,8 +1134,8 @@ class TestCLIEmbeddingsProgressAndStats:
             cursor = db.connection.cursor()
             for i in range(3):
                 cursor.execute(
-                    "INSERT INTO papers (uid, name, abstract, decision) VALUES (?, ?, ?, ?)",
-                    (f"test{i}", f"Paper {i}", f"Abstract {i}", "Accept"),
+                    "INSERT INTO papers (uid, title, abstract) VALUES (?, ?, ?)",
+                    (f"test{i}", f"Paper {i}", f"Abstract {i}"),
                 )
             db.connection.commit()
 
@@ -1147,7 +1145,7 @@ class TestCLIEmbeddingsProgressAndStats:
 
             # Mock embed_from_database to simulate progress callbacks
 
-            def mock_embed(db_path, batch_size, where_clause, progress_callback):
+            def mock_embed(db_path, batch_size=10, where_clause=None, progress_callback=None):
                 # Simulate calling progress callback with (current, total) arguments
                 if progress_callback:
                     progress_callback(1, 3)

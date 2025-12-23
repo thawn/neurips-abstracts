@@ -60,9 +60,9 @@ def get_paper_with_authors(database, paper_uid: str) -> Dict[str, Any]:
 
         paper = dict(paper_rows[0])
 
-        # Parse authors from comma-separated string
+        # Parse authors from semicolon-separated string
         if "authors" in paper and paper["authors"]:
-            paper["authors"] = [a.strip() for a in paper["authors"].split(",")]
+            paper["authors"] = [a.strip() for a in paper["authors"].split(";")]
         else:
             paper["authors"] = []
 

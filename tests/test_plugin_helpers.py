@@ -138,13 +138,13 @@ class TestConvertNeuripsToLightweightSchema:
 
         assert result[0]["authors"] == ["John Doe", "Jane Smith"]
 
-    def test_authors_as_comma_separated_string(self):
-        """Test conversion when authors is a comma-separated string."""
+    def test_authors_as_semicolon_separated_string(self):
+        """Test conversion when authors is a semicolon-separated string."""
         neurips_papers = [
             {
                 "id": 1,
                 "title": "Test Paper",
-                "authors": "John Doe, Jane Smith, Bob Johnson",
+                "authors": "John Doe; Jane Smith; Bob Johnson",
                 "abstract": "Abstract",
                 "session": "Session A",
                 "poster_position": "A1",
@@ -322,40 +322,6 @@ class TestConvertNeuripsToLightweightSchema:
         # Semicolons should be replaced with spaces
         assert result[0]["authors"] == ["John Doe", "Jane Smith"]
         # Should not raise validation errors when used with LightweightPaper
-
-    def test_preserve_ids_false(self):
-        """Test that IDs are not included when preserve_ids=False."""
-        neurips_papers = [
-            {
-                "id": 123,
-                "title": "Test Paper",
-                "authors": ["John Doe"],
-                "abstract": "Abstract",
-                "session": "Session A",
-                "poster_position": "A1",
-            }
-        ]
-
-        result = convert_neurips_to_lightweight_schema(neurips_papers, preserve_ids=False)
-
-        assert "original_id" not in result[0]
-
-    def test_preserve_ids_true(self):
-        """Test that IDs are included when preserve_ids=True."""
-        neurips_papers = [
-            {
-                "id": 123,
-                "title": "Test Paper",
-                "authors": ["John Doe"],
-                "abstract": "Abstract",
-                "session": "Session A",
-                "poster_position": "A1",
-            }
-        ]
-
-        result = convert_neurips_to_lightweight_schema(neurips_papers, preserve_ids=True)
-
-        assert result[0]["original_id"] == 123
 
     def test_multiple_papers(self):
         """Test conversion of multiple papers at once."""

@@ -7,7 +7,7 @@ with custom data downloaders.
 
 The framework consists of:
 - Base classes for plugin implementation (DownloaderPlugin, LightweightDownloaderPlugin)
-- Schema conversion utilities (convert_lightweight_to_neurips_schema)
+- Schema conversion utilities (convert_neurips_to_lightweight_schema)
 - Plugin registry for managing plugins (PluginRegistry)
 - Pydantic models for data validation (LightweightPaper)
 """
@@ -139,216 +139,6 @@ from typing import Any, Dict, List
 from datetime import datetime
 
 
-def convert_lightweight_to_neurips_schema(
-    papers: List[Dict[str, Any]],
-    session_default: str = "Workshop",
-    event_type: str = "Poster",
-    source_url: str = "",
-) -> Dict[str, Any]:
-    """
-    Convert lightweight paper format to full NeurIPS schema.
-
-    Parameters
-    ----------
-    papers : list
-        List of papers in lightweight format with required fields:
-        - title (str)
-        - authors (list of str or list of dict with 'fullname')
-        - abstract (str)
-        - session (str)
-        - poster_position (str)
-
-        And optional fields:
-        - paper_pdf_url (str)
-        - poster_image_url (str)
-        - url (str)
-        - room_name (str)
-        - keywords (list)
-        - starttime (str)
-        - endtime (str)
-        - id (int)
-        - award (str)
-    session_default : str
-        Default session name if not specified in paper
-    event_type : str
-        Event type (e.g., "Poster", "Oral", "Workshop Poster")
-    source_url : str
-        Source URL for the data
-
-    Returns
-    -------
-    dict
-        Data in full NeurIPS schema format
-
-    Raises
-    ------
-    ValueError
-        If required fields are missing
-    """
-    results = []
-
-    for idx, paper in enumerate(papers):
-        # Validate required fields
-        required_fields = ["title", "authors", "abstract", "session", "poster_position"]
-        missing_fields = [f for f in required_fields if f not in paper]
-        if missing_fields:
-            raise ValueError(
-                f"Paper at index {idx} missing required fields: {missing_fields}. "
-                f"Required fields: {required_fields}"
-            )
-
-        # Get or generate paper ID
-        paper_id = paper.get("id", idx + 1)
-
-        # Generate UID using conference, year, and paper_id
-        conference = paper.get("conference", "unknown")
-        year = paper.get("year", "unknown")
-        uid = f"{conference}_{year}_{paper_id}"
-
-        # Process authors
-        authors_list = []
-        author_data = paper["authors"]
-
-        if isinstance(author_data, list):
-            for author in author_data:
-                if isinstance(author, str):
-                    # Simple string author - generate stable ID from name hash
-                    # Use hash to avoid collisions across conferences
-                    author_id = abs(hash(author.lower())) % (10**9)  # Keep ID within reasonable range
-                    authors_list.append({
-                        "id": author_id,
-                        "fullname": author,
-                        "url": "",
-                        "institution": "",
-                        "original_id": None
-                    })
-                elif isinstance(author, dict):
-                    # Author dict - preserve original ID if present, use hash-based ID
-                    fullname = author.get("fullname", author.get("name", "Unknown"))
-
-                    # Store original ID if present
-                    original_id = author.get("id") if "id" in author else None
-
-                    # Always generate hash-based ID for consistency
-                    author_id = abs(hash(fullname.lower())) % (10**9)
-
-                    authors_list.append(
-                        {
-                            "id": author_id,
-                            "fullname": fullname,
-                            "url": author.get("url", ""),
-                            "institution": author.get("institution", ""),
-                            "original_id": str(original_id) if original_id is not None else None,
-                        }
-                    )
-
-        # Build eventmedia list
-        eventmedia = []
-        media_id = paper_id * 1000
-        timestamp = datetime.now().isoformat()
-
-        # Add URL if provided
-        if paper.get("url"):
-            eventmedia.append(
-                {
-                    "id": media_id + 1,
-                    "modified": timestamp,
-                    "display_section": 1,
-                    "type": "URL",
-                    "name": "Paper Link",
-                    "visible": True,
-                    "sortkey": 0,
-                    "is_live_content": False,
-                    "uri": paper["url"],
-                    "resourcetype": "UriEventmedia",
-                }
-            )
-
-        # Add poster image if provided
-        if paper.get("poster_image_url"):
-            eventmedia.append(
-                {
-                    "id": media_id + 2,
-                    "file": paper["poster_image_url"],
-                    "modified": timestamp,
-                    "display_section": 1,
-                    "type": "Poster",
-                    "name": "Poster",
-                    "visible": True,
-                    "sortkey": 0,
-                    "is_live_content": False,
-                    "detailed_kind": "",
-                    "generated_from": None,
-                    "resourcetype": "EventmediaImageFile",
-                }
-            )
-
-        # Add PDF if provided
-        if paper.get("paper_pdf_url"):
-            eventmedia.append(
-                {
-                    "id": media_id + 3,
-                    "modified": timestamp,
-                    "display_section": 1,
-                    "type": "PDF",
-                    "name": "Paper PDF",
-                    "visible": True,
-                    "sortkey": 0,
-                    "is_live_content": False,
-                    "uri": paper["paper_pdf_url"],
-                    "resourcetype": "UriEventmedia",
-                }
-            )
-
-        # Create full paper entry
-        neurips_paper = {
-            "id": paper_id,
-            "uid": uid,
-            "name": paper["title"],
-            "authors": authors_list,
-            "abstract": paper["abstract"],
-            "topic": paper.get("topic", session_default),
-            "keywords": paper.get("keywords", []),
-            "decision": paper.get("award") or paper.get("decision", "Accept (poster)"),
-            "session": paper["session"],
-            "eventtype": event_type,
-            "event_type": event_type,
-            "room_name": paper.get("room_name", ""),
-            "virtualsite_url": paper.get("virtualsite_url", ""),
-            "url": paper.get("url", ""),
-            "sourceid": None,
-            "sourceurl": source_url,
-            "starttime": paper.get("starttime", ""),
-            "endtime": paper.get("endtime", ""),
-            "starttime2": None,
-            "endtime2": None,
-            "diversity_event": None,
-            "paper_url": paper.get("url", ""),
-            "paper_pdf_url": paper.get("paper_pdf_url", ""),
-            "children_url": None,
-            "children": [],
-            "children_ids": [],
-            "parent1": "",
-            "parent2": None,
-            "parent2_id": None,
-            "eventmedia": eventmedia,
-            "show_in_schedule_overview": False,
-            "visible": True,
-            "poster_position": paper["poster_position"],
-            "schedule_html": "",
-            "latitude": None,
-            "longitude": None,
-            "related_events": [],
-            "related_events_ids": [],
-            "year": paper.get("year"),
-            "conference": paper.get("conference", ""),
-        }
-
-        results.append(neurips_paper)
-
-    return {"count": len(results), "next": None, "previous": None, "results": results}
-
-
 def convert_neurips_to_lightweight_schema(papers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Convert full NeurIPS schema to lightweight paper format.
@@ -377,8 +167,6 @@ def convert_neurips_to_lightweight_schema(papers: List[Dict[str, Any]]) -> List[
         - award or decision (str, optional)
         - year (int, optional)
         - conference (str, optional)
-    preserve_ids : bool, optional
-        If True, preserve the original paper ID (default: True)
 
     Returns
     -------
@@ -438,11 +226,8 @@ def convert_neurips_to_lightweight_schema(papers: List[Dict[str, Any]]) -> List[
                     # Already a string
                     authors.append(author)
         elif isinstance(authors_data, str):
-            # If authors is a comma or semicolon-separated string, split it
-            if ";" in authors_data:
-                authors = [a.strip() for a in authors_data.split(";") if a.strip()]
-            else:
-                authors = [a.strip() for a in authors_data.split(",") if a.strip()]
+            # Authors is a semicolon-separated string, split it
+            authors = [a.strip() for a in authors_data.split(";") if a.strip()]
 
         # Sanitize author names to remove semicolons (required by LightweightPaper validation)
         authors = sanitize_author_names(authors)
@@ -791,7 +576,7 @@ def sanitize_author_names(authors: List[str]) -> List[str]:
     Filter out semicolons from author names.
 
     Semicolons are not allowed in author names because they would interfere
-    with the comma-separated format used to store authors in the database.
+    with the semicolon-separated format used to store authors in the database.
     This function replaces semicolons with spaces and normalizes whitespace.
 
     Parameters
@@ -887,7 +672,6 @@ __all__ = [
     "list_plugins",
     "list_plugin_names",
     # Conversion utilities
-    "convert_lightweight_to_neurips_schema",
     "convert_neurips_to_lightweight_schema",
     # Pydantic models
     "LightweightPaper",

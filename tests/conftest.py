@@ -11,6 +11,7 @@ from unittest.mock import Mock
 
 from neurips_abstracts.database import DatabaseManager
 from neurips_abstracts.embeddings import EmbeddingsManager
+from neurips_abstracts.plugin import LightweightPaper
 
 
 @pytest.fixture
@@ -69,7 +70,7 @@ def sample_neurips_data():
 
     Notes
     -----
-    This data uses the lightweight schema with comma-separated authors.
+    This data uses the lightweight schema with semicolon-separated authors.
     Includes two papers for testing purposes.
     """
     return [
@@ -278,13 +279,13 @@ def mock_embeddings_manager():
     Notes
     -----
     Returns mock search results with 3 papers about transformers and language models.
-    Uses integer IDs as required by the database.
+    Uses string UIDs as required by the lightweight database schema.
     """
     mock_em = Mock(spec=EmbeddingsManager)
 
-    # Mock successful search results with INTEGER IDs
+    # Mock successful search results with STRING UIDs (lightweight schema)
     mock_em.search_similar.return_value = {
-        "ids": [[1, 2, 3]],  # Use integer IDs instead of strings
+        "ids": [["1", "2", "3"]],  # Use string UIDs (lightweight schema)
         "distances": [[0.1, 0.2, 0.3]],
         "metadatas": [
             [
@@ -347,3 +348,52 @@ def mock_response(sample_neurips_data):
     mock.json.return_value = sample_neurips_data
     mock.raise_for_status = Mock()
     return mock
+
+
+@pytest.fixture(scope="module")
+def web_test_papers():
+    """
+    Create a list of test papers for web interface testing.
+
+    Returns
+    -------
+    list of LightweightPaper
+        Three test papers with diverse content for web testing
+
+    Notes
+    -----
+    This fixture provides consistent test data for both test_web.py and
+    test_web_integration.py, reducing code duplication.
+    """
+    return [
+        LightweightPaper(
+            title="Attention is All You Need",
+            authors=["Ashish Vaswani", "Noam Shazeer", "Niki Parmar"],
+            abstract="We propose the Transformer, a model architecture based solely on attention mechanisms.",
+            session="Oral Session 1",
+            poster_position="O1",
+            year=2017,
+            conference="NeurIPS",
+            keywords=["attention", "transformer", "neural networks"],
+        ),
+        LightweightPaper(
+            title="BERT: Pre-training of Deep Bidirectional Transformers",
+            authors=["Jacob Devlin", "Ming-Wei Chang", "Kenton Lee"],
+            abstract="We introduce BERT, which stands for Bidirectional Encoder Representations from Transformers.",
+            session="Poster Session 2",
+            poster_position="P42",
+            year=2019,
+            conference="NeurIPS",
+            keywords=["bert", "pretraining", "transformers"],
+        ),
+        LightweightPaper(
+            title="Deep Residual Learning for Image Recognition",
+            authors=["Kaiming He", "Xiangyu Zhang", "Shaoqing Ren"],
+            abstract="We present a residual learning framework to ease the training of networks.",
+            session="Oral Session 3",
+            poster_position="O2",
+            year=2016,
+            conference="NeurIPS",
+            keywords=["resnet", "computer vision", "deep learning"],
+        ),
+    ]

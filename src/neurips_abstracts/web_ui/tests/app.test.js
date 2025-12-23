@@ -365,7 +365,7 @@ describe('NeurIPS Abstracts Web UI', () => {
                 papers: [
                     {
                         uid: 'test_uid_abc123',
-                        name: 'Test Paper 1',
+                        title: 'Test Paper 1',
                         authors: ['Author A', 'Author B'],
                         abstract: 'This is a test abstract.',
                         session: 'Session 1A',
@@ -374,7 +374,7 @@ describe('NeurIPS Abstracts Web UI', () => {
                     },
                     {
                         uid: 'test_uid_def456',
-                        name: 'Test Paper 2',
+                        title: 'Test Paper 2',
                         authors: ['Author C'],
                         abstract: 'Another test abstract.'
                     }
@@ -398,7 +398,7 @@ describe('NeurIPS Abstracts Web UI', () => {
 
         test('should show AI-Powered badge for embedding search', () => {
             const data = {
-                papers: [{ uid: 'test_uid_123', name: 'Test', authors: [], abstract: 'Test' }],
+                papers: [{ uid: 'test_uid_123', title: 'Test', authors: [], abstract: 'Test' }],
                 count: 1,
                 use_embeddings: true
             };
@@ -414,7 +414,7 @@ describe('NeurIPS Abstracts Web UI', () => {
                 papers: [
                     {
                         uid: 'test_uid_789',
-                        name: 'Test Paper',
+                        title: 'Test Paper',
                         authors: null,
                         abstract: 'Test abstract'
                     }
@@ -434,7 +434,7 @@ describe('NeurIPS Abstracts Web UI', () => {
                 papers: [
                     {
                         uid: 'test_uid_abc',
-                        name: 'Test Paper',
+                        title: 'Test Paper',
                         authors: 'John Doe, Jane Smith', // String instead of array
                         abstract: 'Test abstract'
                     }
@@ -456,7 +456,7 @@ describe('NeurIPS Abstracts Web UI', () => {
                 papers: [
                     {
                         uid: 'test_uid_def',
-                        name: 'Test Paper',
+                        title: 'Test Paper',
                         authors: { name: 'John Doe' }, // Object instead of array
                         abstract: 'Test abstract'
                     }
@@ -549,7 +549,7 @@ describe('NeurIPS Abstracts Web UI', () => {
                 papers: [
                     {
                         uid: 'test_uid_pqr',
-                        name: '<script>alert("xss")</script>',
+                        title: '<script>alert("xss")</script>',
                         authors: ['<b>Author</b>'],
                         abstract: '<img src=x onerror=alert(1)>'
                     }
@@ -953,7 +953,7 @@ describe('NeurIPS Abstracts Web UI', () => {
         test('should fetch and display paper details', async () => {
             const mockPaper = {
                 uid: 'test_uid_stu',
-                name: 'Test Paper',
+                title: 'Test Paper',
                 authors: ['Author A', 'Author B'],
                 abstract: 'This is a test abstract',
                 session: 'Session 2B',
@@ -1016,7 +1016,7 @@ describe('NeurIPS Abstracts Web UI', () => {
         test('should escape HTML in paper details', async () => {
             const mockPaper = {
                 uid: 'test_uid_yza',
-                name: '<script>alert("xss")</script>',
+                title: '<script>alert("xss")</script>',
                 authors: ['<b>Author</b>'],
                 abstract: '<img src=x onerror=alert(1)>'
             };

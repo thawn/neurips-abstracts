@@ -252,12 +252,12 @@ class TestWebUIGetPaperDetails:
             with patch("neurips_abstracts.web_ui.app.get_database") as mock_get_db:
                 mock_db = Mock()
 
-                # Mock paper data with lightweight schema (authors as comma-separated string)
+                # Mock paper data with lightweight schema (authors as semicolon-separated string)
                 paper_row = {
                     "uid": "test_uid_123",
                     "title": "Test Paper",
                     "abstract": "Test abstract",
-                    "authors": "Author 1, Author 2",  # Comma-separated string
+                    "authors": "Author 1; Author 2",  # Semicolon-separated string
                     "session": "Poster Session 1",
                     "poster_position": "123",
                 }
@@ -270,7 +270,7 @@ class TestWebUIGetPaperDetails:
                 assert response.status_code == 200
                 data = response.get_json()
 
-                # Verify authors are included as list (parsed from comma-separated string)
+                # Verify authors are included as list (parsed from semicolon-separated string)
                 assert "authors" in data
                 assert data["authors"] == ["Author 1", "Author 2"]
                 # Verify 'uid' field is present

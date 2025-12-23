@@ -319,11 +319,11 @@ class TestEmbeddingsManager:
 
         count = embeddings_manager.embed_from_database(test_database)
 
-        # Should embed 2 papers (3rd has empty abstract)
-        assert count == 2
+        # Should embed all 3 papers (title is included even if abstract is empty)
+        assert count == 3
 
         stats = embeddings_manager.get_collection_stats()
-        assert stats["count"] == 2
+        assert stats["count"] == 3
         embeddings_manager.close()
 
     def test_embed_from_database_with_filter(self, embeddings_manager, test_database, mock_lm_studio):
@@ -367,8 +367,8 @@ class TestEmbeddingsManager:
 
         count = embeddings_manager.embed_from_database(test_database, progress_callback=progress_callback)
 
-        # Should embed 2 papers (one has empty abstract)
-        assert count == 2
+        # Should embed all 3 papers (title is included even if abstract is empty)
+        assert count == 3
         # Progress callback should be called
         assert len(progress_calls) > 0
         # Check that the last progress call shows completion
@@ -442,8 +442,8 @@ class TestEmbeddingsManager:
 
         count = embeddings_manager.embed_from_database(db_path)
 
-        # Should skip all papers with empty abstracts
-        assert count == 0
+        # Should embed all papers (title is included even if abstract is empty)
+        assert count == 3
         embeddings_manager.close()
 
     def test_embed_from_database_sql_error(self, embeddings_manager, tmp_path):
@@ -470,10 +470,10 @@ class TestEmbeddingsManager:
         embeddings_manager.create_collection()
 
         count = embeddings_manager.embed_from_database(test_database)
-        assert count == 2
+        assert count == 3
 
         # Search to verify metadata includes lightweight schema fields
-        results = embeddings_manager.search_similar("test", n_results=2)
+        results = embeddings_manager.search_similar("test", n_results=3)
         assert len(results["metadatas"][0]) > 0
 
         # Check papers have the lightweight schema metadata fields
@@ -528,19 +528,19 @@ class TestEmbeddingsManager:
         embeddings_manager.connect()
         embeddings_manager.create_collection()
 
-        # First run - should embed 2 papers
+        # First run - should embed all 3 papers
         count = embeddings_manager.embed_from_database(test_database)
-        assert count == 2
+        assert count == 3
 
         stats = embeddings_manager.get_collection_stats()
-        assert stats["count"] == 2
+        assert stats["count"] == 3
 
         # Second run - should skip all existing papers and embed 0 new ones
         count = embeddings_manager.embed_from_database(test_database)
         assert count == 0
 
-        # Collection count should still be 2
+        # Collection count should still be 3
         stats = embeddings_manager.get_collection_stats()
-        assert stats["count"] == 2
+        assert stats["count"] == 3
 
         embeddings_manager.close()

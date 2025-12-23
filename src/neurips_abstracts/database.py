@@ -404,7 +404,7 @@ class DatabaseManager:
         >>> with db:
         ...     results = db.query("SELECT * FROM papers WHERE eventtype = ?", ("Poster",))
         >>> for row in results:
-        ...     print(row['name'])
+        ...     print(row['title'])
         """
         if not self.connection:
             raise DatabaseError("Not connected to database")
@@ -562,7 +562,7 @@ class DatabaseManager:
             return []
 
         try:
-            # Search for authors in the comma-separated authors field
+            # Search for authors in the semicolon-separated authors field
             sql = "SELECT DISTINCT authors FROM papers WHERE authors LIKE ? LIMIT ?"
             parameters = [f"%{name}%", limit * 10]  # Get more papers to extract unique authors
 
@@ -572,8 +572,8 @@ class DatabaseManager:
             author_names = set()
             for row in rows:
                 if row["authors"]:
-                    # Split comma-separated authors
-                    for author in row["authors"].split(","):
+                    # Split semicolon-separated authors
+                    for author in row["authors"].split(";"):
                         author = author.strip()
                         if name.lower() in author.lower():
                             author_names.add(author)
@@ -611,7 +611,7 @@ class DatabaseManager:
             author_names = set()
             for row in rows:
                 if row["authors"]:
-                    for author in row["authors"].split(","):
+                    for author in row["authors"].split(";"):
                         author_names.add(author.strip())
 
             return len(author_names)

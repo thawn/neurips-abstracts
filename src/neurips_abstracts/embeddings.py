@@ -548,7 +548,7 @@ class EmbeddingsManager:
                 abstract = f"{row['title']}\n\n{row['abstract']}"
 
                 if not abstract or not abstract.strip():
-                    logger.warning(f"Skipping paper {paper_id}: no abstract")
+                    logger.warning(f"Skipping paper {paper_id}: no abstract and no title")
                     continue
 
                 # Check if paper already exists in the collection

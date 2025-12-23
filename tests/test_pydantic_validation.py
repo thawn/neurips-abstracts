@@ -142,7 +142,7 @@ class TestPydanticValidation:
         assert count == 1
 
         papers_result = connected_db.search_papers(keyword="Test")
-        assert papers_result[0]["id"] is not None  # Should have valid ID
+        assert papers_result[0]["uid"] is not None  # Should have valid UID
 
     def test_authors_with_semicolons_rejected(self, connected_db):
         """Test that author names with semicolons are rejected."""

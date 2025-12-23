@@ -6,7 +6,7 @@ This script:
 1. Creates backup of original database
 2. Creates new tables with lightweight schema
 3. Migrates data:
-   - Converts authors from separate table to comma-separated list
+   - Converts authors from separate table to semicolon-separated list
    - Renames 'name' column to 'title'
    - Generates new UID based on title+original_id hash
    - Stores original UID in 'original_id' column
