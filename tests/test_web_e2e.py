@@ -193,14 +193,11 @@ def web_server(test_database, tmp_path_factory):
     db = DatabaseManager(str(test_database))
     db.connect()
     cursor = db.connection.cursor()
-    cursor.execute("SELECT uid, abstract FROM papers")
+    cursor.execute("SELECT * FROM papers")
     papers = cursor.fetchall()
 
     for paper in papers:
-        paper_uid = paper[0]
-        abstract = paper[1]
-        if abstract:  # Only add if abstract exists
-            em.add_paper(paper_id=paper_uid, abstract=abstract, metadata={"paper_id": str(paper_uid)})
+        em.add_paper(dict(paper))
 
     db.close()
     # Don't close embeddings manager - keep the ChromaDB collection active
