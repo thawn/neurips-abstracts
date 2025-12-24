@@ -8,6 +8,7 @@ are correctly stored in ChromaDB and can be used for filtering search results.
 import pytest
 from pathlib import Path
 import chromadb
+from neurips_abstracts.plugin import validate_lightweight_paper, prepare_chroma_db_paper_data
 from neurips_abstracts.config import Config
 from neurips_abstracts.embeddings import EmbeddingsManager
 
@@ -110,12 +111,9 @@ class TestChromaDBMetadata:
 
         assert len(results["ids"]) > 0, "Should retrieve at least one document"
 
-        # Check first document has required fields stored in ChromaDB
-        metadata = results["metadatas"][0]
-        assert "session" in metadata, "Metadata should have 'session' field"
-        assert "title" in metadata, "Metadata should have 'title' field"
-        assert "authors" in metadata, "Metadata should have 'authors' field"
-        assert "keywords" in metadata, "Metadata should have 'keywords' field"
+        # Check first document has validates successfully using plugin.validate_lightweight_paper()
+        metadata = prepare_chroma_db_paper_data(results["metadatas"][0])
+        assert validate_lightweight_paper(metadata), "Metadata validation failed"
 
     def test_filter_by_session(self, chroma_collection):
         """
@@ -202,11 +200,14 @@ class TestChromaDBMetadata:
         sample_results = chroma_collection.get(limit=20, include=["metadatas"])
         sessions = [m.get("session") for m in sample_results["metadatas"] if m.get("session")]
 
-        if len(sessions) < 2:
+        # Find unique sessions
+        unique_sessions = list(set(sessions))
+
+        if len(unique_sessions) < 2:
             pytest.skip("Need at least 2 different sessions for $or test")
 
         # Use first two unique sessions
-        unique_sessions = list(set(sessions))[:2]
+        unique_sessions = unique_sessions[:2]
 
         # Create $or filter
         where_filter = {

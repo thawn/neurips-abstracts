@@ -19,6 +19,7 @@ import chromadb
 from chromadb.config import Settings
 
 from .config import get_config
+from .database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +71,7 @@ class EmbeddingsManager:
     >>> em = EmbeddingsManager()
     >>> em.connect()
     >>> em.create_collection()
-    >>> embedding = em.generate_embedding("This is a paper abstract.")
-    >>> em.add_paper(paper_id=1, abstract="...", metadata={...})
+    >>> em.add_paper(paper_dict)
     >>> results = em.search_similar("machine learning", n_results=5)
     >>> em.close()
     """
@@ -265,7 +265,7 @@ class EmbeddingsManager:
         except Exception as e:
             raise EmbeddingsError(f"Failed to create collection: {str(e)}") from e
 
-    def paper_exists(self, paper_id: Union[int, str]) -> bool:
+    def paper_exists(self, paper_id: str) -> bool:
         """
         Check if a paper already exists in the collection.
 
@@ -289,10 +289,10 @@ class EmbeddingsManager:
         >>> em = EmbeddingsManager()
         >>> em.connect()
         >>> em.create_collection()
-        >>> em.paper_exists(1)
+        >>> em.paper_exists("uid1")
         False
-        >>> em.add_paper(1, "Abstract text")
-        >>> em.paper_exists(1)
+        >>> em.add_paper(paper_dict)
+        >>> em.paper_exists("uid1")
         True
         """
         if not self.collection:
@@ -300,33 +300,93 @@ class EmbeddingsManager:
 
         try:
             # Try to get the paper by ID
-            result = self.collection.get(ids=[str(paper_id)])
+            result = self.collection.get(ids=[paper_id])
             # If the result has any IDs, the paper exists
             return len(result["ids"]) > 0
         except Exception as e:
             logger.warning(f"Error checking if paper {paper_id} exists: {str(e)}")
             return False
 
-    def add_paper(
-        self,
-        paper_id: Union[int, str],
-        abstract: str,
-        metadata: Optional[Dict[str, Any]] = None,
-        embedding: Optional[List[float]] = None,
-    ) -> None:
+    def paper_needs_update(self, paper: dict) -> bool:
+        """
+        Check if a paper needs to be updated in the collection.
+
+        Parameters
+        ----------
+        paper : dict
+            Dictionary containing paper information.
+
+        Returns
+        -------
+        bool
+            True if the paper needs to be updated, False otherwise.
+
+        Raises
+        ------
+        EmbeddingsError
+            If collection not initialized.
+
+        Examples
+        --------
+        >>> em = EmbeddingsManager()
+        >>> em.connect()
+        >>> em.create_collection()
+        >>> em.paper_needs_update({"id": 1, "abstract": "Updated abstract"})
+        True
+        >>> em.paper_needs_update({"id": 1, "abstract": "This paper presents..."})
+        False
+        """
+        if not self.collection:
+            raise EmbeddingsError("Collection not initialized. Call create_collection() first.")
+
+        try:
+            existing_paper = self.collection.get(ids=[paper["uid"]])
+            if not existing_paper or len(existing_paper["ids"]) == 0:
+                return True  # Paper does not exist, needs to be added
+
+            # Compare existing embedding text with new paper data
+            existing_documents = existing_paper.get("documents", [])
+            if not existing_documents:
+                return True  # No document stored, needs update
+
+            existing_embedding_text = existing_documents[0]
+            new_embedding_text = self.embedding_text_from_paper(paper)
+            return existing_embedding_text != new_embedding_text
+
+        except Exception as e:
+            logger.warning(f"Error checking if paper {paper['uid']} needs update: {str(e)}")
+            return False
+
+    @staticmethod
+    def embedding_text_from_paper(paper: dict) -> str:
+        """
+        Extract text for embedding from a paper dictionary.
+
+        Parameters
+        ----------
+        paper : dict
+            Dictionary containing paper information.
+
+        Returns
+        -------
+        str
+            Text to be used for embedding.
+        """
+        title = paper.get("title", "") or ""
+        abstract = paper.get("abstract", "") or ""
+        embedding_text = f"{title}\n\n{abstract}".strip()
+        if not embedding_text:
+            raise ValueError(f"Cannot create embedding text for paper {paper['uid']}: no abstract and no title")
+        return embedding_text
+
+    def add_paper(self, paper: dict) -> None:
         """
         Add a paper to the vector database.
 
         Parameters
         ----------
-        paper_id : int or str
-            Unique identifier for the paper.
-        abstract : str
-            Paper abstract text.
-        metadata : dict, optional
-            Additional metadata to store with the embedding.
-        embedding : List[float], optional
-            Pre-computed embedding. If None, will generate from abstract.
+        paper : dict
+            Dictionary containing paper information. Must follow the paper database schema.
 
         Raises
         ------
@@ -338,39 +398,31 @@ class EmbeddingsManager:
         >>> em = EmbeddingsManager()
         >>> em.connect()
         >>> em.create_collection()
-        >>> em.add_paper(
-        ...     paper_id=1,
-        ...     abstract="This paper presents...",
-        ...     metadata={"title": "Example Paper", "year": 2025}
-        ... )
+        >>> em.add_paper(paper_dict)
         """
         if not self.collection:
             raise EmbeddingsError("Collection not initialized. Call create_collection() first.")
 
-        if not abstract or not abstract.strip():
-            logger.warning(f"Skipping paper {paper_id}: empty abstract")
-            return
-
         try:
+            embedding_text = self.embedding_text_from_paper(paper)
             # Generate embedding if not provided
-            if embedding is None:
-                embedding = self.generate_embedding(abstract)
+            embedding = self.generate_embedding(embedding_text)
 
             # Prepare metadata - convert all values to strings for ChromaDB compatibility
-            meta = metadata or {}
+            meta = paper.copy()
             meta = {k: str(v) if v is not None else "" for k, v in meta.items()}
 
             # Add to collection
             self.collection.add(
                 embeddings=[embedding],
-                documents=[abstract],
+                documents=[embedding_text],
                 metadatas=[meta],
-                ids=[str(paper_id)],
+                ids=[paper["uid"]],
             )
-            logger.debug(f"Added paper {paper_id} to collection")
+            logger.debug(f"Added paper {paper['uid']} to collection")
 
         except Exception as e:
-            raise EmbeddingsError(f"Failed to add paper {paper_id}: {str(e)}") from e
+            raise EmbeddingsError(f"Failed to add paper {paper['uid']}: {str(e)}") from e
 
     def search_similar(
         self,
@@ -405,7 +457,7 @@ class EmbeddingsManager:
         >>> em = EmbeddingsManager()
         >>> em.connect()
         >>> em.create_collection()
-        >>> results = em.search_similar("deep learning transformers", n_results=5)
+        >>> results = em.search_similar("deep learning transformers", n_results=5, where={"year": 2025})
         >>> for i, paper_id in enumerate(results['ids'][0]):
         ...     print(f"{i+1}. Paper {paper_id}: {results['metadatas'][0][i]}")
         """
@@ -510,6 +562,7 @@ class EmbeddingsManager:
             raise EmbeddingsError("Collection not initialized. Call create_collection() first.")
 
         try:
+            # ToDo use DatabaseManager to handle database operations
             db_path = Path(db_path)
             if not db_path.exists():
                 raise EmbeddingsError(f"Database not found: {db_path}")
@@ -521,12 +574,8 @@ class EmbeddingsManager:
 
             # Check which columns exist in the papers table
             cursor.execute("PRAGMA table_info(papers)")
-            columns = {row[1] for row in cursor.fetchall()}
 
-            # Build query with lightweight schema fields
-            base_columns = ["uid", "title", "abstract", "authors", "keywords", "session"]
-
-            query = f"SELECT {', '.join(base_columns)} FROM papers"
+            query = f"SELECT * FROM papers"
             if where_clause:
                 query += f" WHERE {where_clause}"
 
@@ -544,40 +593,28 @@ class EmbeddingsManager:
             embedded_count = 0
             skipped_count = 0
             for i, row in enumerate(rows):
-                paper_id = row["uid"]
-                abstract = f"{row['title']}\n\n{row['abstract']}"
+                # Convert sqlite3.Row to dict
+                paper = dict(row)
 
-                if not abstract or not abstract.strip():
-                    logger.warning(f"Skipping paper {paper_id}: no abstract and no title")
-                    continue
-
-                # Check if paper already exists in the collection
-                if self.paper_exists(paper_id):
-                    logger.debug(f"Skipping paper {paper_id}: already exists in collection")
+                # Check if paper already exists in the collection and if it needs to be updated
+                if not self.paper_needs_update(paper):
+                    logger.debug(f"Skipping paper {paper['uid']}: already exists in collection")
                     skipped_count += 1
                     # Still call progress callback to update the progress bar
                     if progress_callback:
                         progress_callback(i + 1, total)
                     continue
+                else:
+                    try:
+                        self.add_paper(paper)
+                        embedded_count += 1
+                        # Call progress callback if provided
+                        if progress_callback:
+                            progress_callback(i + 1, total)
 
-                metadata = {
-                    "title": row["title"] or "",
-                    "authors": row["authors"] or "",
-                    "keywords": row["keywords"] or "",
-                    "session": row["session"] or "",
-                }
-
-                try:
-                    self.add_paper(paper_id, abstract, metadata)
-                    embedded_count += 1
-
-                    # Call progress callback if provided
-                    if progress_callback:
-                        progress_callback(i + 1, total)
-
-                except Exception as e:
-                    logger.error(f"Failed to embed paper {paper_id}: {str(e)}")
-                    continue
+                    except Exception as e:
+                        logger.error(f"Failed to embed paper {paper['uid']}: {str(e)}")
+                        continue
 
             conn.close()
             logger.info(f"Successfully embedded {embedded_count} papers, skipped {skipped_count} existing papers")
