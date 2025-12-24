@@ -520,8 +520,10 @@ class DatabaseManager:
             parameters.extend(conference_list)
 
         where_clause = " AND ".join(conditions) if conditions else "1=1"
-        sql = f"SELECT * FROM papers WHERE {where_clause} LIMIT ?"
-        parameters.append(limit)
+        sql = f"SELECT * FROM papers WHERE {where_clause}"
+        if limit:
+            sql += " LIMIT ?"
+            parameters.append(limit)
 
         return self.query(sql, tuple(parameters))
 
