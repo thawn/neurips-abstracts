@@ -11,6 +11,7 @@ from unittest.mock import Mock
 
 from neurips_abstracts.database import DatabaseManager
 from neurips_abstracts.embeddings import EmbeddingsManager
+from neurips_abstracts.plugin import LightweightPaper
 
 
 @pytest.fixture
@@ -60,124 +61,53 @@ def connected_db(db_manager):
 @pytest.fixture
 def sample_neurips_data():
     """
-    Sample NeurIPS data with authors for testing.
+    Sample data with lightweight schema for testing.
 
     Returns
     -------
     list
-        List of paper dictionaries with complete metadata and authors
+        List of paper dictionaries with lightweight schema
 
     Notes
     -----
-    This data uses the current schema with integer IDs and proper author relationships.
-    Includes two papers with overlapping authors to test author deduplication.
+    This data uses the lightweight schema with semicolon-separated authors.
+    Includes two papers for testing purposes.
     """
     return [
         {
             "id": 123456,
             "uid": "abc123",
-            "name": "Deep Learning with Neural Networks",
+            "title": "Deep Learning with Neural Networks",
             "abstract": "This paper explores deep neural networks",
-            "authors": [
-                {
-                    "id": 457880,
-                    "fullname": "Miaomiao Huang",
-                    "url": "http://neurips.cc/api/miniconf/users/457880?format=json",
-                    "institution": "Northeastern University",
-                },
-                {
-                    "id": 457881,
-                    "fullname": "John Smith",
-                    "url": "http://neurips.cc/api/miniconf/users/457881?format=json",
-                    "institution": "MIT",
-                },
-            ],
-            "keywords": "deep learning, neural networks",
-            "topic": "General Machine Learning",
-            "decision": "Accept (poster)",
+            "authors": ["Miaomiao Huang", "John Smith"],
+            "keywords": ["deep learning", "neural networks"],
             "session": "Session A",
-            "eventtype": "Poster",
-            "event_type": "poster_template",
+            "poster_position": "A-1",
             "room_name": "Hall A",
-            "virtualsite_url": "https://neurips.cc/virtual/2025/poster/123456",
             "url": "https://openreview.net/forum?id=abc123",
-            "sourceid": 123456,
-            "sourceurl": "https://openreview.net/forum?id=abc123",
+            "paper_pdf_url": "https://openreview.net/pdf?id=abc123",
             "starttime": "2025-12-10T10:00:00",
             "endtime": "2025-12-10T12:00:00",
-            "starttime2": None,
-            "endtime2": None,
-            "diversity_event": False,
-            "paper_url": "https://openreview.net/forum?id=abc123",
-            "paper_pdf_url": "https://openreview.net/pdf?id=abc123",
-            "children_url": None,
-            "children": [],
-            "children_ids": [],
-            "parent1": None,
-            "parent2": None,
-            "parent2_id": None,
-            "eventmedia": None,
-            "show_in_schedule_overview": True,
-            "visible": True,
-            "poster_position": "A-1",
-            "schedule_html": "<p>Poster Session A</p>",
-            "latitude": 40.7128,
-            "longitude": -74.0060,
-            "related_events": [],
-            "related_events_ids": [],
+            "year": 2025,
+            "conference": "NeurIPS",
         },
         {
             "id": 123457,
             "uid": "def456",
-            "name": "Advances in Computer Vision",
+            "title": "Advances in Computer Vision",
             "abstract": "This paper discusses computer vision techniques",
-            "authors": [
-                {
-                    "id": 457881,
-                    "fullname": "John Smith",
-                    "url": "http://neurips.cc/api/miniconf/users/457881?format=json",
-                    "institution": "MIT",
-                },
-                {
-                    "id": 457882,
-                    "fullname": "Jane Doe",
-                    "url": "http://neurips.cc/api/miniconf/users/457882?format=json",
-                    "institution": "Stanford University",
-                },
-            ],
-            "keywords": "computer vision, image processing",
-            "topic": "Computer Vision",
-            "decision": "Accept (oral)",
+            "authors": ["John Smith", "Jane Doe"],
+            "keywords": ["computer vision", "image processing"],
             "session": "Session B",
-            "eventtype": "Oral",
-            "event_type": "oral_template",
+            "poster_position": "B-2",
             "room_name": "Hall B",
-            "virtualsite_url": "https://neurips.cc/virtual/2025/oral/123457",
             "url": "https://openreview.net/forum?id=def456",
-            "sourceid": 123457,
-            "sourceurl": "https://openreview.net/forum?id=def456",
-            "starttime": "2025-12-10T14:00:00",
-            "endtime": "2025-12-10T15:00:00",
-            "starttime2": None,
-            "endtime2": None,
-            "diversity_event": False,
-            "paper_url": "https://openreview.net/forum?id=def456",
             "paper_pdf_url": "https://openreview.net/pdf?id=def456",
-            "children_url": None,
-            "children": [],
-            "children_ids": [],
-            "parent1": None,
-            "parent2": None,
-            "parent2_id": None,
-            "eventmedia": None,
-            "show_in_schedule_overview": True,
-            "visible": True,
-            "poster_position": "B-1",
-            "schedule_html": "<p>Oral Session B</p>",
-            "latitude": 40.7128,
-            "longitude": -74.0060,
-            "related_events": [],
-            "related_events_ids": [],
+            "starttime": "2025-12-10T14:00:00",
+            "endtime": "2025-12-10T16:00:00",
+            "award": "Best Paper Award",
+            "year": 2025,
+            "conference": "NeurIPS",
         },
     ]
 
@@ -349,13 +279,13 @@ def mock_embeddings_manager():
     Notes
     -----
     Returns mock search results with 3 papers about transformers and language models.
-    Uses integer IDs as required by the database.
+    Uses string UIDs as required by the lightweight database schema.
     """
     mock_em = Mock(spec=EmbeddingsManager)
 
-    # Mock successful search results with INTEGER IDs
+    # Mock successful search results with STRING UIDs (lightweight schema)
     mock_em.search_similar.return_value = {
-        "ids": [[1, 2, 3]],  # Use integer IDs instead of strings
+        "ids": [["1", "2", "3"]],  # Use string UIDs (lightweight schema)
         "distances": [[0.1, 0.2, 0.3]],
         "metadatas": [
             [
@@ -418,3 +348,52 @@ def mock_response(sample_neurips_data):
     mock.json.return_value = sample_neurips_data
     mock.raise_for_status = Mock()
     return mock
+
+
+@pytest.fixture(scope="module")
+def web_test_papers():
+    """
+    Create a list of test papers for web interface testing.
+
+    Returns
+    -------
+    list of LightweightPaper
+        Three test papers with diverse content for web testing
+
+    Notes
+    -----
+    This fixture provides consistent test data for both test_web.py and
+    test_web_integration.py, reducing code duplication.
+    """
+    return [
+        LightweightPaper(
+            title="Attention is All You Need",
+            authors=["Ashish Vaswani", "Noam Shazeer", "Niki Parmar"],
+            abstract="We propose the Transformer, a model architecture based solely on attention mechanisms.",
+            session="Oral Session 1",
+            poster_position="O1",
+            year=2017,
+            conference="NeurIPS",
+            keywords=["attention", "transformer", "neural networks"],
+        ),
+        LightweightPaper(
+            title="BERT: Pre-training of Deep Bidirectional Transformers",
+            authors=["Jacob Devlin", "Ming-Wei Chang", "Kenton Lee"],
+            abstract="We introduce BERT, which stands for Bidirectional Encoder Representations from Transformers.",
+            session="Poster Session 2",
+            poster_position="P42",
+            year=2019,
+            conference="NeurIPS",
+            keywords=["bert", "pretraining", "transformers"],
+        ),
+        LightweightPaper(
+            title="Deep Residual Learning for Image Recognition",
+            authors=["Kaiming He", "Xiangyu Zhang", "Shaoqing Ren"],
+            abstract="We present a residual learning framework to ease the training of networks.",
+            session="Oral Session 3",
+            poster_position="O2",
+            year=2016,
+            conference="NeurIPS",
+            keywords=["resnet", "computer vision", "deep learning"],
+        ),
+    ]

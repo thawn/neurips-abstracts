@@ -10,7 +10,6 @@ import logging
 import zipfile
 from pathlib import Path
 from io import BytesIO
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, render_template, request, jsonify, g, send_file, Response
 from flask_cors import CORS
 import requests
@@ -198,7 +197,7 @@ def get_filters():
     Returns
     -------
     dict
-        Dictionary with sessions, topics, eventtypes, years, and conferences lists
+        Dictionary with sessions, years, and conferences lists
     """
     try:
         # Get optional query parameters
@@ -278,8 +277,6 @@ def search():
     - use_embeddings: bool - Use semantic search
     - limit: int - Maximum results (default: 10)
     - sessions: list[str] - Filter by sessions (optional)
-    - topics: list[str] - Filter by topics (optional)
-    - eventtypes: list[str] - Filter by event types (optional)
     - years: list[int] - Filter by years (optional)
     - conferences: list[str] - Filter by conferences (optional)
 
@@ -294,8 +291,6 @@ def search():
         use_embeddings = data.get("use_embeddings", False)
         limit = data.get("limit", 10)
         sessions = data.get("sessions", [])
-        topics = data.get("topics", [])
-        eventtypes = data.get("eventtypes", [])
         years = data.get("years", [])
         conferences = data.get("conferences", [])
 
@@ -311,10 +306,6 @@ def search():
             filter_conditions = []
             if sessions:
                 filter_conditions.append({"session": {"$in": sessions}})
-            if topics:
-                filter_conditions.append({"topic": {"$in": topics}})
-            if eventtypes:
-                filter_conditions.append({"eventtype": {"$in": eventtypes}})
             if years:
                 # Convert years to integers for ChromaDB
                 year_ints = [int(y) for y in years]
@@ -329,9 +320,7 @@ def search():
             elif len(filter_conditions) == 1:
                 where_filter = filter_conditions[0]
 
-            logger.info(
-                f"Search filter: sessions={sessions}, topics={topics}, eventtypes={eventtypes}, years={years}, conferences={conferences}"
-            )
+            logger.info(f"Search filter: sessions={sessions}, years={years}, conferences={conferences}")
             logger.info(f"Where filter: {where_filter}")
 
             results = em.search_similar(query, n_results=limit * 2, where=where_filter)  # Get more results to filter
@@ -353,8 +342,6 @@ def search():
             papers = database.search_papers(
                 keyword=query,
                 sessions=sessions,
-                topics=topics,
-                eventtypes=eventtypes,
                 years=years,
                 conferences=conferences,
                 limit=limit,
@@ -363,12 +350,10 @@ def search():
             # Convert to list of dicts for JSON serialization
             papers = [dict(p) for p in papers]
 
-            # Get authors from authors table for each paper
+            # Parse authors from comma-separated string for each paper
             for paper in papers:
-                paper_id = paper.get("id")
-                if paper_id:
-                    authors = database.get_paper_authors(paper_id)
-                    paper["authors"] = [a["fullname"] for a in authors]
+                if "authors" in paper and paper["authors"]:
+                    paper["authors"] = [a.strip() for a in paper["authors"].split(";")]
                 else:
                     paper["authors"] = []
 
@@ -378,15 +363,15 @@ def search():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/paper/<int:paper_id>")
-def get_paper(paper_id):
+@app.route("/api/paper/<string:paper_uid>")
+def get_paper(paper_uid):
     """
-    Get a specific paper by ID.
+    Get a specific paper by UID.
 
     Parameters
     ----------
-    paper_id : int
-        Paper ID
+    paper_uid : str
+        Paper UID (unique identifier string)
 
     Returns
     -------
@@ -395,7 +380,7 @@ def get_paper(paper_id):
     """
     try:
         database = get_database()
-        paper = get_paper_with_authors(database, paper_id)
+        paper = get_paper_with_authors(database, paper_uid)
         return jsonify(paper)
     except PaperFormattingError as e:
         return jsonify({"error": str(e)}), 404
@@ -406,12 +391,12 @@ def get_paper(paper_id):
 @app.route("/api/papers/batch", methods=["POST"])
 def get_papers_batch():
     """
-    Get multiple papers by their IDs.
+    Get multiple papers by their UIDs.
 
     Parameters
     ----------
-    paper_ids : list of int
-        List of paper IDs to fetch
+    paper_ids : list of str
+        List of paper UIDs to fetch (note: parameter name kept for compatibility)
 
     Returns
     -------
@@ -428,12 +413,14 @@ def get_papers_batch():
         database = get_database()
         papers = []
 
-        for paper_id in paper_ids:
+        for paper_uid in paper_ids:
             try:
-                paper = get_paper_with_authors(database, paper_id)
+                # Convert to string if needed (JavaScript might send as string or int)
+                paper_uid_str = str(paper_uid)
+                paper = get_paper_with_authors(database, paper_uid_str)
                 papers.append(paper)
             except PaperFormattingError as e:
-                logger.warning(f"Paper {paper_id} not found: {e}")
+                logger.warning(f"Paper {paper_uid} not found: {e}")
                 continue
 
         return jsonify({"papers": papers})
@@ -452,8 +439,6 @@ def chat():
     - n_papers: int (optional) - Number of papers for context
     - reset: bool (optional) - Reset conversation
     - sessions: list (optional) - Filter by sessions
-    - topics: list (optional) - Filter by topics
-    - eventtypes: list (optional) - Filter by event types
     - years: list (optional) - Filter by years
     - conferences: list (optional) - Filter by conferences
 
@@ -471,8 +456,6 @@ def chat():
 
         # Get filters
         sessions = data.get("sessions", [])
-        topics = data.get("topics", [])
-        eventtypes = data.get("eventtypes", [])
         years = data.get("years", [])
         conferences = data.get("conferences", [])
 
@@ -488,10 +471,6 @@ def chat():
         filter_conditions = []
         if sessions:
             filter_conditions.append({"session": {"$in": sessions}})
-        if topics:
-            filter_conditions.append({"topic": {"$in": topics}})
-        if eventtypes:
-            filter_conditions.append({"eventtype": {"$in": eventtypes}})
         if years:
             # Convert years to integers for ChromaDB
             year_ints = [int(y) for y in years]
@@ -566,7 +545,7 @@ def download_and_embed():
     # Capture config before generator runs
     config = get_config()
     db_path = Path(config.paper_db_path)
-    
+
     # For SSE streaming, we need standalone connections (not Flask g-based)
     # We'll create them inside the generator where they're needed
 
@@ -575,18 +554,18 @@ def download_and_embed():
         # Create standalone database and embeddings manager connections
         database = None
         em = None
-        
+
         try:
             from neurips_abstracts.plugins import get_plugin
             import neurips_abstracts.plugins.neurips_downloader
             import neurips_abstracts.plugins.iclr_downloader
             import neurips_abstracts.plugins.icml_downloader
             import neurips_abstracts.plugins.ml4ps_downloader
-            
+
             # Create standalone database connection
             database = DatabaseManager(str(db_path))
             database.connect()
-            
+
             # Create standalone embeddings manager
             em = EmbeddingsManager(
                 lm_studio_url=config.llm_backend_url,
@@ -601,7 +580,7 @@ def download_and_embed():
             # Need to handle cases like "ML4PS@Neurips" -> "ml4ps"
             from neurips_abstracts.plugins import list_plugins
             plugins = list_plugins()
-            
+
             # Build reverse mapping from conference_name to plugin name
             conference_to_plugin = {}
             for plugin_info in plugins:
@@ -609,7 +588,7 @@ def download_and_embed():
                 plug_name = plugin_info.get("name")
                 if conf_name and plug_name:
                     conference_to_plugin[conf_name] = plug_name
-            
+
             # Look up plugin name by conference name
             plugin_name = conference_to_plugin.get(conference)
             if not plugin_name:
@@ -638,11 +617,11 @@ def download_and_embed():
 
             # Download data using plugin
             json_path = db_path.parent / f"{plugin_name}_{year}.json"
-            download_data = plugin.download(
+            papers = plugin.download(
                 year=year, output_path=str(json_path), force_download=True  # Always re-download to get updates
             )
 
-            downloaded_count = download_data.get("count", 0)
+            downloaded_count = len(papers)
             logger.info(f"Downloaded {downloaded_count} papers from {conference} {year}")
 
             yield f"data: {json.dumps({'stage': 'download', 'progress': 100, 'message': f'Downloaded {downloaded_count} papers'})}\n\n"
@@ -651,28 +630,32 @@ def download_and_embed():
             existing_papers = {}
             if is_update:
                 existing_rows = database.query(
-                    "SELECT id, uid, name, abstract FROM papers WHERE year = ? AND conference = ?",
+                    "SELECT uid, title, abstract FROM papers WHERE year = ? AND conference = ?",
                     (year, conference),
                 )
                 # Map by uid (unique identifier) for easy lookup
-                existing_papers = {row["uid"]: {"id": row["id"], "name": row["name"], "abstract": row["abstract"]} for row in existing_rows if row["uid"]}
+                existing_papers = {
+                    row["uid"]: {"title": row["title"], "abstract": row["abstract"]}
+                    for row in existing_rows
+                    if row["uid"]
+                }
 
             # Load into database (this will update existing papers)
             yield f"data: {json.dumps({'stage': 'database', 'progress': 0, 'message': 'Loading papers into database...'})}\n\n"
 
-            new_count = database.load_json_data(download_data)
+            new_count = database.add_papers(papers)
             logger.info(f"Loaded/updated {new_count} papers in database")
 
             yield f"data: {json.dumps({'stage': 'database', 'progress': 100, 'message': f'Loaded {new_count} papers into database'})}\n\n"
 
             # Get papers after update and determine which ones changed
             all_papers = database.query(
-                "SELECT id, uid, name, abstract, year, conference FROM papers WHERE year = ? AND conference = ?",
+                "SELECT uid, title, abstract, year, conference FROM papers WHERE year = ? AND conference = ?",
                 (year, conference),
             )
 
             # Get existing embeddings from ChromaDB to check what's missing
-            all_paper_ids = [str(p["id"]) for p in all_papers]
+            all_paper_ids = [str(p["uid"]) for p in all_papers]
             existing_embeddings = set()
             try:
                 # Query ChromaDB to see which papers already have embeddings
@@ -690,18 +673,18 @@ def download_and_embed():
             papers_to_embed = []
             for paper in all_papers:
                 uid = paper["uid"]
-                paper_id_str = str(paper["id"])
-                
+                paper_uid_str = str(paper["uid"])  # Use uid for ChromaDB check
+
                 if not uid or uid not in existing_papers:
                     # New paper - needs embedding
                     papers_to_embed.append(paper)
-                elif paper_id_str not in existing_embeddings:
+                elif paper_uid_str not in existing_embeddings:
                     # Missing embedding - needs embedding
                     papers_to_embed.append(paper)
                 else:
                     # Check if title or abstract changed
                     old_paper = existing_papers[uid]
-                    if old_paper["name"] != paper["name"] or old_paper["abstract"] != paper["abstract"]:
+                    if old_paper["title"] != paper["title"] or old_paper["abstract"] != paper["abstract"]:
                         # Content changed - needs re-embedding
                         papers_to_embed.append(paper)
 
@@ -720,36 +703,36 @@ def download_and_embed():
                 yield f"data: {json.dumps(complete_msg)}\n\n"
                 return
 
-            # Get paper IDs for papers that need embedding
-            paper_ids = [p["id"] for p in papers_to_embed]
+            # Get paper UIDs for papers that need embedding
+            paper_uids = [p["uid"] for p in papers_to_embed]
 
             # Delete existing embeddings for papers that will be re-embedded
-            logger.info(f"Removing old embeddings for {len(paper_ids)} papers")
+            logger.info(f"Removing old embeddings for {len(paper_uids)} papers")
             embed_prep_msg = {
                 "stage": "embeddings",
                 "progress": 0,
-                "message": f"Preparing to embed {len(paper_ids)} papers (new/changed/missing)...",
+                "message": f"Preparing to embed {len(paper_uids)} papers (new/changed/missing)...",
             }
             yield f"data: {json.dumps(embed_prep_msg)}\n\n"
 
             # Only delete embeddings that exist
-            if paper_ids:
-                em.collection.delete(ids=[str(pid) for pid in paper_ids])
+            if paper_uids:
+                em.collection.delete(ids=[str(uid) for uid in paper_uids])
 
             # Create new embeddings
-            logger.info(f"Creating embeddings for {len(paper_ids)} papers")
+            logger.info(f"Creating embeddings for {len(paper_uids)} papers")
             embedded_count = 0
             batch_size = 50
             total_papers = len(papers_to_embed)
 
             for i in range(0, len(papers_to_embed), batch_size):
                 batch = papers_to_embed[i : i + batch_size]
-                batch_ids = [p["id"] for p in batch]
-                batch_texts = [f"Title: {p['name']}\n\nAbstract: {p['abstract']}" for p in batch]
+                batch_ids = [p["uid"] for p in batch]
+                batch_texts = [f"Title: {p['title']}\n\nAbstract: {p['abstract']}" for p in batch]
                 batch_metadatas = [
                     {
-                        "paper_id": str(p["id"]),
-                        "title": p["name"],
+                        "paper_id": str(p["uid"]),
+                        "title": p["title"],
                         "year": str(p["year"] if p["year"] else ""),
                         "conference": p["conference"] if p["conference"] else "",
                     }
@@ -991,7 +974,7 @@ def generate_all_papers_markdown(papers, title):
 
         for paper in session_papers:
             stars = "⭐" * paper.get("priority", 0)
-            markdown += f"### {paper.get('name', 'Untitled')}\n\n"
+            markdown += f"### {paper.get('title', 'Untitled')}\n\n"
             markdown += f"**Rating:** {stars} ({paper.get('priority', 0)}/5)\n\n"
 
             if paper.get("searchTerm"):
@@ -1005,7 +988,7 @@ def generate_all_papers_markdown(papers, title):
                 markdown += f"**Poster:** {paper['poster_position']}\n\n"
 
             # Link to PDF on OpenReview
-            paper_id = paper["id"]
+            paper_id = paper["uid"]
             pdf_url = paper.get("paper_pdf_url")
             if not pdf_url and paper.get("paper_url"):
                 pdf_url = paper["paper_url"].replace("/forum?id=", "/pdf?id=")
@@ -1022,7 +1005,7 @@ def generate_all_papers_markdown(papers, title):
                 markdown += f"**Abstract:**\n\n{paper['abstract']}\n\n"
 
             # Link to poster image
-            poster_url = get_poster_url(paper.get("eventmedia"), paper_id)
+            poster_url = get_poster_url(paper)
             if poster_url:
                 markdown += f"**Poster Image:** ![Poster]({poster_url})\n\n"
 
@@ -1332,7 +1315,7 @@ def generate_search_term_markdown(search_term, papers):
 
         for paper in session_papers:
             stars = "⭐" * paper.get("priority", 0)
-            markdown += f"### {paper.get('name', 'Untitled')}\n\n"
+            markdown += f"### {paper.get('title', 'Untitled')}\n\n"
             markdown += f"**Rating:** {stars} ({paper.get('priority', 0)}/5)\n\n"
 
             if paper.get("authors"):
@@ -1343,7 +1326,7 @@ def generate_search_term_markdown(search_term, papers):
                 markdown += f"**Poster:** {paper['poster_position']}\n\n"
 
             # Link to PDF on OpenReview
-            paper_id = paper["id"]
+            paper_id = paper["uid"]
             pdf_url = paper.get("paper_pdf_url")
             if not pdf_url and paper.get("paper_url"):
                 pdf_url = paper["paper_url"].replace("/forum?id=", "/pdf?id=")
@@ -1360,7 +1343,7 @@ def generate_search_term_markdown(search_term, papers):
                 markdown += f"**Abstract:**\n\n{paper['abstract']}\n\n"
 
             # Link to poster image
-            poster_url = get_poster_url(paper.get("eventmedia"), paper_id)
+            poster_url = get_poster_url(paper)
             if poster_url:
                 markdown += f"**Poster Image:** ![Poster]({poster_url})\n\n"
 
@@ -1476,330 +1459,29 @@ def export_interesting_papers():
         return jsonify({"error": str(e)}), 500
 
 
-def download_paper_pdf_task(paper, assets_dir):
+def get_poster_url(paper):
     """
-    Prepare and execute PDF download for a paper.
+    Get poster image URL from paper object.
 
     Parameters
     ----------
     paper : dict
-        Paper dictionary
-    assets_dir : Path
-        Directory to save file to
-
-    Returns
-    -------
-    tuple
-        (paper_id, filename or None)
-    """
-    paper_id = paper["id"]
-    pdf_url = paper.get("paper_pdf_url")
-    if not pdf_url and paper.get("paper_url"):
-        # Convert forum URL to PDF URL
-        pdf_url = paper["paper_url"].replace("/forum?id=", "/pdf?id=")
-
-    if pdf_url:
-        filename = download_file(pdf_url, assets_dir, f"paper_{paper_id}.pdf")
-        return (paper_id, filename)
-    return (paper_id, None)
-
-
-def get_poster_url(eventmedia, paper_id):
-    """
-    Extract poster image URL from eventmedia field or construct from paper ID.
-
-    Parameters
-    ----------
-    eventmedia : str
-        Event media field (may contain JSON or URLs)
-    paper_id : int
-        Paper ID to use as fallback for constructing poster URL
+        Paper object containing poster_image_url and original_id fields
 
     Returns
     -------
     str or None
         Poster image URL if found, None otherwise
     """
-    try:
-        import json
+    # Use poster_image_url from database if available
+    poster_image_url = paper.get("poster_image_url")
+    if poster_image_url:
+        return poster_image_url
 
-        # Try to parse eventmedia as JSON
-        if eventmedia and eventmedia.strip().startswith("["):
-            media_list = json.loads(eventmedia)
-            for media_item in media_list:
-                if isinstance(media_item, dict):
-                    # Check for "file" key (poster images)
-                    file_path = media_item.get("file")
-
-                    # Prioritize poster files (skip thumbnails, prefer full size)
-                    if file_path and any(
-                        ext in file_path.lower() for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]
-                    ):
-                        # Skip thumbnail versions
-                        if "-thumb" in file_path:
-                            continue
-                        # Construct full URL from file path
-                        return f"https://neurips.cc{file_path}"
-
-                    # Fall back to URL field
-                    url = media_item.get("url") or media_item.get("uri")
-                    if url and any(ext in url.lower() for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]):
-                        return url
-    except Exception as e:
-        logger.warning(f"Failed to parse eventmedia: {e}")
-
-    # Fallback: construct poster URL from paper ID
-    if paper_id:
-        return f"https://neurips.cc/media/PosterPDFs/NeurIPS%202025/{paper_id}.png"
-
-    return None
-
-
-def download_poster_image_task(paper, assets_dir):
-    """
-    Prepare and execute poster image download for a paper.
-
-    Parameters
-    ----------
-    paper : dict
-        Paper dictionary
-    assets_dir : Path
-        Directory to save file to
-
-    Returns
-    -------
-    tuple
-        (paper_id, filename or None)
-    """
-    paper_id = paper["id"]
-    filename = download_poster_image(paper.get("eventmedia"), assets_dir, f"poster_{paper_id}", paper_id)
-    return (paper_id, filename)
-
-
-def download_assets_parallel(papers, assets_dir, max_workers=10):
-    """
-    Download poster images in parallel for all papers.
-
-    Note: PDFs are not downloaded; links to OpenReview are provided instead.
-
-    Parameters
-    ----------
-    papers : list
-        List of paper dictionaries
-    assets_dir : Path
-        Directory to save files to
-    max_workers : int
-        Maximum number of parallel download threads
-
-    Returns
-    -------
-    dict
-        Poster results dict where keys are paper IDs and values are filenames
-    """
-    poster_results = {}
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all poster download tasks
-        poster_futures = {
-            executor.submit(download_poster_image_task, paper, assets_dir): paper["id"] for paper in papers
-        }
-
-        # Collect poster results as they complete
-        for future in as_completed(poster_futures):
-            try:
-                paper_id, filename = future.result()
-                if filename:
-                    poster_results[paper_id] = filename
-            except Exception as e:
-                paper_id = poster_futures[future]
-                logger.warning(f"Failed to download poster for paper {paper_id}: {e}")
-
-    logger.info(f"Downloaded {len(poster_results)} posters in parallel")
-    return poster_results
-
-
-def generate_markdown_with_assets(papers, search_query, assets_dir):
-    """
-    Generate markdown content with links to remote assets.
-
-    Note: No files are downloaded. PDFs and poster images link to their original URLs.
-
-    Parameters
-    ----------
-    papers : list
-        List of paper dictionaries
-    search_query : str
-        Search query context
-    assets_dir : Path or None
-        Ignored (kept for backward compatibility)
-
-    Returns
-    -------
-    str
-        Markdown content
-    """
-    from datetime import datetime
-
-    markdown = "# Interesting Papers from NeurIPS 2025\n\n"
-    markdown += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    markdown += f"**Total Papers:** {len(papers)}\n\n"
-    markdown += "---\n\n"
-
-    # Group by session, then by search term
-    sessions = {}
-    for paper in papers:
-        session = paper.get("session") or "No Session"
-        if session not in sessions:
-            sessions[session] = {}
-
-        search_term = paper.get("searchTerm") or "Unknown"
-        if search_term not in sessions[session]:
-            sessions[session][search_term] = []
-        sessions[session][search_term].append(paper)
-
-    # Write each session and its search terms
-    for session, search_terms in sessions.items():
-        markdown += f"## {session}\n\n"
-
-        for search_term, term_papers in search_terms.items():
-            markdown += f"### {search_term}\n\n"
-
-            for paper in term_papers:
-                stars = "⭐" * paper.get("priority", 0)
-                markdown += f"#### {paper.get('name', 'Untitled')}\n\n"
-                markdown += f"**Rating:** {stars} ({paper.get('priority', 0)}/5)\n\n"
-
-                if paper.get("authors"):
-                    authors = ", ".join(paper["authors"]) if isinstance(paper["authors"], list) else paper["authors"]
-                    markdown += f"**Authors:** {authors}\n\n"
-
-                if paper.get("poster_position"):
-                    markdown += f"**Poster:** {paper['poster_position']}\n\n"
-
-                # Always link to PDF on OpenReview (not downloaded)
-                paper_id = paper["id"]
-                pdf_url = paper.get("paper_pdf_url")
-                if not pdf_url and paper.get("paper_url"):
-                    pdf_url = paper["paper_url"].replace("/forum?id=", "/pdf?id=")
-                if pdf_url:
-                    markdown += f"**PDF:** [View on OpenReview]({pdf_url})\n\n"
-
-                if paper.get("paper_url"):
-                    markdown += f"**Paper URL:** {paper['paper_url']}\n\n"
-
-                if paper.get("url"):
-                    markdown += f"**Source URL:** {paper['url']}\n\n"
-
-                if paper.get("abstract"):
-                    markdown += f"**Abstract:**\n\n{paper['abstract']}\n\n"
-
-                # Link to poster image on neurips.cc (not downloaded) - placed after abstract
-                poster_url = get_poster_url(paper.get("eventmedia"), paper_id)
-                if poster_url:
-                    markdown += f"**Poster Image:** ![Poster]({poster_url})\n\n"
-
-                markdown += "---\n\n"
-
-    return markdown
-
-
-def download_file(url, target_dir, filename):
-    """
-    Download a file from URL to target directory.
-
-    Parameters
-    ----------
-    url : str
-        URL to download from
-    target_dir : Path
-        Directory to save file to
-    filename : str
-        Name for the downloaded file
-
-    Returns
-    -------
-    str or None
-        Filename if successful, None otherwise
-    """
-    try:
-        response = requests.get(url, timeout=30, stream=True)
-        response.raise_for_status()
-
-        file_path = target_dir / filename
-        with open(file_path, "wb") as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-
-        logger.info(f"Downloaded: {filename}")
-        return filename
-    except Exception as e:
-        logger.warning(f"Failed to download {url}: {e}")
-        return None
-
-
-def download_poster_image(eventmedia, target_dir, base_filename, paper_id=None):
-    """
-    Download poster image from eventmedia field or construct URL from paper ID.
-
-    Parameters
-    ----------
-    eventmedia : str
-        Event media field (may contain JSON or URLs)
-    target_dir : Path
-        Directory to save image to
-    base_filename : str
-        Base filename (extension will be added based on image type)
-    paper_id : int, optional
-        Paper ID to use as fallback for constructing poster URL
-
-    Returns
-    -------
-    str or None
-        Filename if successful, None otherwise
-    """
-    try:
-        import json
-
-        # Try to parse as JSON
-        if eventmedia and eventmedia.strip().startswith("["):
-            media_list = json.loads(eventmedia)
-            for media_item in media_list:
-                if isinstance(media_item, dict):
-                    # Check for "file" key (poster images) or "url" key (other media)
-                    file_path = media_item.get("file")
-                    url = media_item.get("url") or media_item.get("uri")
-
-                    # Prioritize poster files (skip thumbnails, prefer full size)
-                    if file_path and any(
-                        ext in file_path.lower() for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]
-                    ):
-                        # Skip thumbnail versions
-                        if "-thumb" in file_path:
-                            continue
-                        # Construct full URL from file path
-                        full_url = f"https://neurips.cc{file_path}"
-                        # Determine extension
-                        ext = file_path.split(".")[-1].split("?")[0]
-                        filename = f"{base_filename}.{ext}"
-                        return download_file(full_url, target_dir, filename)
-
-                    # Fall back to URL field
-                    elif url and any(ext in url.lower() for ext in [".jpg", ".jpeg", ".png", ".gif", ".webp"]):
-                        # Determine extension
-                        ext = url.split(".")[-1].split("?")[0]
-                        filename = f"{base_filename}.{ext}"
-                        return download_file(url, target_dir, filename)
-    except Exception as e:
-        logger.warning(f"Failed to parse eventmedia: {e}")
-
-    # Fallback: try to construct poster URL from paper ID
-    if paper_id:
-        try:
-            poster_url = f"https://neurips.cc/media/PosterPDFs/NeurIPS%202025/{paper_id}.png"
-            filename = f"{base_filename}.png"
-            return download_file(poster_url, target_dir, filename)
-        except Exception as e:
-            logger.debug(f"Failed to download poster from constructed URL for paper {paper_id}: {e}")
+    # Fallback: construct poster URL from original_id
+    original_id = paper.get("original_id")
+    if original_id:
+        return f"https://{paper.get('conference', 'neurips').lower()}.cc/media/PosterPDFs/{paper.get('conference', 'NeurIPS')}%20{paper.get('year', '2025')}/{original_id}.png"
 
     return None
 

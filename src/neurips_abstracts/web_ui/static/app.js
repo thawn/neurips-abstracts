@@ -130,31 +130,6 @@ function syncFiltersToModal(context) {
             opt.selected = sessionFilter.options[idx]?.selected || false;
         });
     }
-
-    // Sync topics
-    const topicFilter = document.getElementById(prefix + 'topic-filter');
-    const modalTopicFilter = document.getElementById('modal-topic-filter');
-    if (topicFilter && modalTopicFilter) {
-        // Copy options if modal is empty
-        if (modalTopicFilter.options.length === 0) {
-            modalTopicFilter.innerHTML = topicFilter.innerHTML;
-        }
-        // Copy selections
-        Array.from(modalTopicFilter.options).forEach((opt, idx) => {
-            opt.selected = topicFilter.options[idx]?.selected || false;
-        });
-    }
-
-    // Sync event type
-    const eventtypeFilter = document.getElementById(prefix + 'eventtype-filter');
-    const modalEventtypeFilter = document.getElementById('modal-eventtype-filter');
-    if (eventtypeFilter && modalEventtypeFilter) {
-        // Copy options if modal is empty
-        if (modalEventtypeFilter.options.length === 0) {
-            modalEventtypeFilter.innerHTML = eventtypeFilter.innerHTML;
-        }
-        modalEventtypeFilter.value = eventtypeFilter.value;
-    }
 }
 
 // Sync filters from modal back to search/chat
@@ -168,22 +143,6 @@ function syncFiltersFromModal(context) {
         Array.from(sessionFilter.options).forEach((opt, idx) => {
             opt.selected = modalSessionFilter.options[idx]?.selected || false;
         });
-    }
-
-    // Sync topics
-    const topicFilter = document.getElementById(prefix + 'topic-filter');
-    const modalTopicFilter = document.getElementById('modal-topic-filter');
-    if (topicFilter && modalTopicFilter) {
-        Array.from(topicFilter.options).forEach((opt, idx) => {
-            opt.selected = modalTopicFilter.options[idx]?.selected || false;
-        });
-    }
-
-    // Sync event type
-    const eventtypeFilter = document.getElementById(prefix + 'eventtype-filter');
-    const modalEventtypeFilter = document.getElementById('modal-eventtype-filter');
-    if (eventtypeFilter && modalEventtypeFilter) {
-        eventtypeFilter.value = modalEventtypeFilter.value;
     }
 }
 
@@ -258,7 +217,7 @@ function updateStarDisplay(paperId) {
     const priority = paperPriorities[paperId]?.priority || 0;
 
     // Find all star elements for this paper
-    const paperCard = document.querySelector(`[onclick*="showPaperDetails(${paperId})"]`);
+    const paperCard = document.querySelector(`[onclick*="showPaperDetails('${paperId}')"]`);
     if (paperCard) {
         const stars = paperCard.querySelectorAll('i[class*="fa-star"]');
         stars.forEach((star, index) => {
@@ -309,7 +268,7 @@ async function updateInterestingPapersCount() {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ paper_ids: paperIds.map(id => parseInt(id)) })
+            body: JSON.stringify({ paper_ids: paperIds })
         });
 
         const data = await response.json();
@@ -375,7 +334,7 @@ async function loadInterestingPapers() {
 
     try {
         // Fetch details for all rated papers
-        const paperIds = Object.keys(paperPriorities).map(id => parseInt(id));
+        const paperIds = Object.keys(paperPriorities);
         const response = await fetch(`${API_BASE}/api/papers/batch`, {
             method: 'POST',
             headers: {
@@ -448,7 +407,7 @@ function displayInterestingPapers(papers) {
 
     // Add priority and search term to each paper
     filteredPapers.forEach(paper => {
-        const paperData = paperPriorities[paper.id];
+        const paperData = paperPriorities[paper.uid];
         paper.priority = paperData?.priority || 0;
         paper.searchTerm = paperData?.searchTerm || 'Unknown';
     });
@@ -727,7 +686,7 @@ async function saveInterestingPapersAsMarkdown(event) {
 
     try {
         // Fetch details for all rated papers
-        const paperIds = Object.keys(paperPriorities).map(id => parseInt(id));
+        const paperIds = Object.keys(paperPriorities);
 
         // Get current search context
         const searchInput = document.getElementById('search-input');
@@ -949,7 +908,7 @@ function handleJSONFileLoad(event) {
 function generateInterestingPapersMarkdown(papers) {
     // Add priority to each paper
     papers.forEach(paper => {
-        paper.priority = paperPriorities[paper.id]?.priority || 0;
+        paper.priority = paperPriorities[paper.uid]?.priority || 0;
     });
 
     // Sort by session, priority (descending), and poster position
@@ -992,7 +951,7 @@ function generateInterestingPapersMarkdown(papers) {
 
         sessionPapers.forEach(paper => {
             const stars = '⭐'.repeat(paper.priority);
-            markdown += `### ${paper.name || 'Untitled'}\n\n`;
+            markdown += `### ${paper.title || 'Untitled'}\n\n`;
             markdown += `**Rating:** ${stars} (${paper.priority}/5)\n\n`;
 
             if (paper.authors && paper.authors.length > 0) {
@@ -1169,27 +1128,6 @@ async function loadFilterOptions() {
             sessionSelect.appendChild(option);
         });
 
-        // Clear and repopulate search topic filter
-        const topicSelect = document.getElementById('topic-filter');
-        topicSelect.innerHTML = ''; // Clear existing options
-        filtersData.topics.forEach(topic => {
-            const option = document.createElement('option');
-            option.value = topic;
-            option.textContent = topic;
-            option.selected = true; // Select all by default
-            topicSelect.appendChild(option);
-        });
-
-        // Clear and repopulate search eventtype filter (single select)
-        const eventtypeSelect = document.getElementById('eventtype-filter');
-        eventtypeSelect.innerHTML = ''; // Clear existing options
-        filtersData.eventtypes.forEach(eventtype => {
-            const option = document.createElement('option');
-            option.value = eventtype;
-            option.textContent = eventtype;
-            eventtypeSelect.appendChild(option);
-        });
-
         // Clear and repopulate chat session filter
         const chatSessionSelect = document.getElementById('chat-session-filter');
         chatSessionSelect.innerHTML = ''; // Clear existing options
@@ -1199,27 +1137,6 @@ async function loadFilterOptions() {
             option.textContent = session;
             option.selected = true; // Select all by default
             chatSessionSelect.appendChild(option);
-        });
-
-        // Clear and repopulate chat topic filter
-        const chatTopicSelect = document.getElementById('chat-topic-filter');
-        chatTopicSelect.innerHTML = ''; // Clear existing options
-        filtersData.topics.forEach(topic => {
-            const option = document.createElement('option');
-            option.value = topic;
-            option.textContent = topic;
-            option.selected = true; // Select all by default
-            chatTopicSelect.appendChild(option);
-        });
-
-        // Clear and repopulate chat eventtype filter (single select)
-        const chatEventtypeSelect = document.getElementById('chat-eventtype-filter');
-        chatEventtypeSelect.innerHTML = ''; // Clear existing options
-        filtersData.eventtypes.forEach(eventtype => {
-            const option = document.createElement('option');
-            option.value = eventtype;
-            option.textContent = eventtype;
-            chatEventtypeSelect.appendChild(option);
         });
     } catch (error) {
         console.error('Error loading filter options:', error);
@@ -1249,12 +1166,8 @@ async function searchPapers() {
 
     // Get multiple selected values from multi-select dropdowns
     const sessionSelect = document.getElementById('session-filter');
-    const topicSelect = document.getElementById('topic-filter');
-    const eventtypeSelect = document.getElementById('eventtype-filter');
 
     const sessions = Array.from(sessionSelect.selectedOptions).map(opt => opt.value);
-    const topics = Array.from(topicSelect.selectedOptions).map(opt => opt.value);
-    const eventtype = eventtypeSelect.value; // Single select
 
     // Get year and conference from header selectors
     const yearSelect = document.getElementById('year-selector');
@@ -1289,10 +1202,6 @@ async function searchPapers() {
         if (sessions.length > 0 && sessions.length < sessionSelect.options.length) {
             requestBody.sessions = sessions;
         }
-        if (topics.length > 0 && topics.length < topicSelect.options.length) {
-            requestBody.topics = topics;
-        }
-        if (eventtype) requestBody.eventtypes = [eventtype]; // Single value as array
 
         // Add year filter if selected
         if (selectedYear) {
@@ -1336,7 +1245,7 @@ function formatPaperCard(paper, options = {}) {
         showSearchTerm = false
     } = options;
 
-    const title = paper.name || paper.title || 'Untitled';
+    const title = paper.title || 'Untitled';
 
     // Validate authors is an array (fail-early design)
     if (paper.authors && !Array.isArray(paper.authors)) {
@@ -1381,7 +1290,7 @@ function formatPaperCard(paper, options = {}) {
     if (showSearchTerm && paper.searchTerm) {
         metadata += `<span class="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full mr-${compact ? '1' : '2'} inline-flex items-center">
             <i class="fas fa-search mr-1"></i>${escapeHtml(paper.searchTerm)}
-            <button onclick="editPaperSearchTerm(${paper.id}, event)" class="ml-1 text-purple-600 hover:text-purple-800 focus:outline-none" title="Edit search term">
+            <button onclick="editPaperSearchTerm(${paper.uid}, event)" class="ml-1 text-purple-600 hover:text-purple-800 focus:outline-none" title="Edit search term">
                 <i class="fas fa-edit text-xs"></i>
             </button>
         </span>`;
@@ -1396,21 +1305,24 @@ function formatPaperCard(paper, options = {}) {
         : 'paper-card bg-white rounded-lg shadow-md p-6 hover:shadow-lg cursor-pointer';
 
     // Get current priority for this paper
-    const currentPriority = paperPriorities[paper.id]?.priority || 0;
+    const currentPriority = paperPriorities[paper.uid]?.priority || 0;
 
     // Generate star rating HTML
+    // NOTE: paper.uid must be quoted in onclick handlers because it's a string UID
+    // Without quotes: onclick="setPaperPriority(test_uid_123, 1)" - invalid JavaScript
+    // With quotes: onclick="setPaperPriority('test_uid_123', 1)" - valid JavaScript
     let starsHtml = '<div class="flex-shrink-0 ml-2 flex items-center gap-0.5" onclick="event.stopPropagation()" title="Rate this paper">';
     for (let i = 1; i <= 5; i++) {
         const isSelected = i <= currentPriority;
         const starClass = isSelected
             ? 'fas fa-star text-yellow-400 hover:text-yellow-500'
             : 'far fa-star text-gray-300 hover:text-yellow-400';
-        starsHtml += `<i class="${starClass} cursor-pointer text-${compact ? 'sm' : 'base'}" onclick="setPaperPriority(${paper.id}, ${i})"></i>`;
+        starsHtml += `<i class="${starClass} cursor-pointer text-${compact ? 'sm' : 'base'}" onclick="setPaperPriority('${paper.uid}', ${i})"></i>`;
     }
     starsHtml += '</div>';
 
     return `
-        <div ${cardId} class="${cardClasses}" onclick="showPaperDetails(${paper.id})">
+        <div ${cardId} class="${cardClasses}" onclick="showPaperDetails('${paper.uid}')">
             ${showNumber !== null ? `
                 <div class="flex items-start justify-between mb-1">
                     <span class="text-xs font-semibold text-purple-600">#${showNumber}</span>
@@ -1516,7 +1428,7 @@ async function showPaperDetails(paperId) {
         const authors = (paper.authors && paper.authors.length > 0)
             ? paper.authors.join(', ')
             : 'Unknown';
-        const title = paper.name || paper.title || 'Untitled';
+        const title = paper.title || 'Untitled';
 
         modal.innerHTML = `
             <div class="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-y-auto p-8">
@@ -1539,7 +1451,7 @@ async function showPaperDetails(paperId) {
                         </span>
                     ` : ''}
                     <span class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
-                        <i class="fas fa-fingerprint mr-1"></i>ID: ${paper.id}
+                        <i class="fas fa-fingerprint mr-1"></i>ID: ${paper.uid}
                     </span>
                 </div>
                 
@@ -1606,12 +1518,8 @@ async function sendChatMessage() {
 
         // Get multiple selected values from chat multi-select dropdowns
         const chatSessionSelect = document.getElementById('chat-session-filter');
-        const chatTopicSelect = document.getElementById('chat-topic-filter');
-        const chatEventtypeSelect = document.getElementById('chat-eventtype-filter');
 
         const sessions = Array.from(chatSessionSelect.selectedOptions).map(opt => opt.value);
-        const topics = Array.from(chatTopicSelect.selectedOptions).map(opt => opt.value);
-        const eventtype = chatEventtypeSelect.value; // Single select
 
         // Get year and conference from header selectors
         const yearSelect = document.getElementById('year-selector');
@@ -1628,10 +1536,6 @@ async function sendChatMessage() {
         if (sessions.length > 0 && sessions.length < chatSessionSelect.options.length) {
             requestBody.sessions = sessions;
         }
-        if (topics.length > 0 && topics.length < chatTopicSelect.options.length) {
-            requestBody.topics = topics;
-        }
-        if (eventtype) requestBody.eventtypes = [eventtype]; // Single value as array
 
         // Add year filter if selected
         if (selectedYear) {

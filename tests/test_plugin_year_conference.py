@@ -29,26 +29,33 @@ class TestNeurIPSPluginYearConference:
                     "id": 1,
                     "name": "Paper 1",
                     "abstract": "Abstract 1",
+                    "authors": [{"fullname": "Author 1"}],
+                    "session": "Session A",
+                    "poster_position": "A1",
                 },
                 {
                     "id": 2,
                     "name": "Paper 2",
                     "abstract": "Abstract 2",
+                    "authors": [{"fullname": "Author 2"}],
+                    "session": "Session B",
+                    "poster_position": "B1",
                 },
             ],
         }
         mock_get.return_value = mock_response
 
         plugin = NeurIPSDownloaderPlugin()
-        data = plugin.download(year=2024)
+        papers = plugin.download(year=2024)
 
-        # Verify year and conference were added to each paper
-        assert data["count"] == 2
-        assert len(data["results"]) == 2
+        # Verify we got a list of LightweightPaper objects
+        assert isinstance(papers, list)
+        assert len(papers) == 2
 
-        for paper in data["results"]:
-            assert paper["year"] == 2024
-            assert paper["conference"] == "NeurIPS"
+        # Verify year and conference were set
+        for paper in papers:
+            assert paper.year == 2024
+            assert paper.conference == "NeurIPS"
 
     @patch("neurips_abstracts.plugins.json_conference_downloader.requests.get")
     def test_neurips_plugin_preserves_existing_fields(self, mock_get):
@@ -66,25 +73,30 @@ class TestNeurIPSPluginYearConference:
                     "abstract": "Test Abstract",
                     "authors": [{"fullname": "John Doe"}],
                     "keywords": ["ML", "AI"],
+                    "session": "Session A",
+                    "poster_position": "A1",
                 },
             ],
         }
         mock_get.return_value = mock_response
 
         plugin = NeurIPSDownloaderPlugin()
-        data = plugin.download(year=2025)
+        papers = plugin.download(year=2025)
 
-        # Verify existing fields are preserved
-        paper = data["results"][0]
-        assert paper["id"] == 1
-        assert paper["name"] == "Test Paper"
-        assert paper["abstract"] == "Test Abstract"
-        assert paper["authors"] == [{"fullname": "John Doe"}]
-        assert paper["keywords"] == ["ML", "AI"]
+        # Verify we got a list of LightweightPaper objects
+        assert isinstance(papers, list)
+        assert len(papers) == 1
+
+        # Verify existing fields are preserved in LightweightPaper
+        paper = papers[0]
+        assert paper.title == "Test Paper"
+        assert paper.abstract == "Test Abstract"
+        assert "John Doe" in paper.authors
+        assert paper.keywords == ["ML", "AI"]
 
         # Verify new fields were added
-        assert paper["year"] == 2025
-        assert paper["conference"] == "NeurIPS"
+        assert paper.year == 2025
+        assert paper.conference == "NeurIPS"
 
 
 class TestICMLPluginYearConference:
@@ -104,26 +116,33 @@ class TestICMLPluginYearConference:
                     "id": 1,
                     "name": "Paper 1",
                     "abstract": "Abstract 1",
+                    "authors": [{"fullname": "Author 1"}],
+                    "session": "Session A",
+                    "poster_position": "A1",
                 },
                 {
                     "id": 2,
                     "name": "Paper 2",
                     "abstract": "Abstract 2",
+                    "authors": [{"fullname": "Author 2"}],
+                    "session": "Session B",
+                    "poster_position": "B1",
                 },
             ],
         }
         mock_get.return_value = mock_response
 
         plugin = ICMLDownloaderPlugin()
-        data = plugin.download(year=2025)
+        papers = plugin.download(year=2025)
 
-        # Verify year and conference were added to each paper
-        assert data["count"] == 2
-        assert len(data["results"]) == 2
+        # Verify we got a list of LightweightPaper objects
+        assert isinstance(papers, list)
+        assert len(papers) == 2
 
-        for paper in data["results"]:
-            assert paper["year"] == 2025
-            assert paper["conference"] == "ICML"
+        # Verify year and conference were set
+        for paper in papers:
+            assert paper.year == 2025
+            assert paper.conference == "ICML"
 
     @patch("neurips_abstracts.plugins.json_conference_downloader.requests.get")
     def test_icml_plugin_preserves_existing_fields(self, mock_get):
@@ -141,25 +160,30 @@ class TestICMLPluginYearConference:
                     "abstract": "Test Abstract",
                     "authors": [{"fullname": "John Doe"}],
                     "keywords": ["ML", "AI"],
+                    "session": "Session A",
+                    "poster_position": "A1",
                 },
             ],
         }
         mock_get.return_value = mock_response
 
         plugin = ICMLDownloaderPlugin()
-        data = plugin.download(year=2025)
+        papers = plugin.download(year=2025)
 
-        # Verify existing fields are preserved
-        paper = data["results"][0]
-        assert paper["id"] == 1
-        assert paper["name"] == "Test Paper"
-        assert paper["abstract"] == "Test Abstract"
-        assert paper["authors"] == [{"fullname": "John Doe"}]
-        assert paper["keywords"] == ["ML", "AI"]
+        # Verify we got a list of LightweightPaper objects
+        assert isinstance(papers, list)
+        assert len(papers) == 1
+
+        # Verify existing fields are preserved in LightweightPaper
+        paper = papers[0]
+        assert paper.title == "Test Paper"
+        assert paper.abstract == "Test Abstract"
+        assert "John Doe" in paper.authors
+        assert paper.keywords == ["ML", "AI"]
 
         # Verify new fields were added
-        assert paper["year"] == 2025
-        assert paper["conference"] == "ICML"
+        assert paper.year == 2025
+        assert paper.conference == "ICML"
 
 
 class TestML4PSPluginYearConference:
@@ -258,26 +282,24 @@ class TestDatabaseYearConferenceIntegration:
         plugin = NeurIPSDownloaderPlugin()
         data = plugin.download(year=2024)
 
-        # Create temporary database and load data
+        # Create temporary database and load data (data is now List[LightweightPaper])
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with DatabaseManager(db_path) as db:
                 db.create_tables()
-                db.load_json_data(data)
+                db.add_papers(data)
 
                 # Query papers and verify year and conference
-                papers = db.query("SELECT id, name, year, conference FROM papers ORDER BY id")
+                papers = db.query("SELECT uid, title, year, conference FROM papers ORDER BY title")
                 assert len(papers) == 2
 
-                # Check first paper
-                assert papers[0]["id"] == 1
-                assert papers[0]["name"] == "Test Paper 1"
+                # Check first paper (Test Paper 1)
+                assert papers[0]["title"] == "Test Paper 1"
                 assert papers[0]["year"] == 2024
                 assert papers[0]["conference"] == "NeurIPS"
 
-                # Check second paper
-                assert papers[1]["id"] == 2
-                assert papers[1]["name"] == "Test Paper 2"
+                # Check second paper (Test Paper 2)
+                assert papers[1]["title"] == "Test Paper 2"
                 assert papers[1]["year"] == 2024
                 assert papers[1]["conference"] == "NeurIPS"
 
@@ -316,36 +338,29 @@ class TestDatabaseYearConferenceIntegration:
         # Convert to lightweight format (which adds year and conference)
         lightweight_papers = plugin._convert_to_lightweight_format(papers)
 
-        # Convert to full schema
-        from neurips_abstracts.plugin import convert_lightweight_to_neurips_schema
+        # Convert to LightweightPaper objects for insertion
+        from neurips_abstracts.plugin import LightweightPaper
 
-        data = convert_lightweight_to_neurips_schema(
-            lightweight_papers,
-            session_default="ML4PhysicalSciences 2025 Workshop",
-            event_type="Workshop Poster",
-            source_url="https://ml4physicalsciences.github.io/2025/",
-        )
+        papers_to_insert = [LightweightPaper(**paper_dict) for paper_dict in lightweight_papers]
 
         # Create temporary database and load data
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test.db"
             with DatabaseManager(db_path) as db:
                 db.create_tables()
-                db.load_json_data(data)
+                db.add_papers(papers_to_insert)
 
                 # Query papers and verify year and conference
-                papers = db.query("SELECT id, name, year, conference FROM papers ORDER BY id")
+                papers = db.query("SELECT uid, title, year, conference FROM papers ORDER BY uid")
                 assert len(papers) == 2
 
                 # Check first paper
-                assert papers[0]["id"] == 1
-                assert papers[0]["name"] == "ML4PS Paper 1"
+                assert papers[0]["title"] == "ML4PS Paper 1"
                 assert papers[0]["year"] == 2025
                 assert papers[0]["conference"] == "ML4PS@Neurips"
 
                 # Check second paper
-                assert papers[1]["id"] == 2
-                assert papers[1]["name"] == "ML4PS Paper 2"
+                assert papers[1]["title"] == "ML4PS Paper 2"
                 assert papers[1]["year"] == 2025
                 assert papers[1]["conference"] == "ML4PS@Neurips"
 

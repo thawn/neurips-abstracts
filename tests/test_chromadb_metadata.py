@@ -1,8 +1,8 @@
 """
 Tests for ChromaDB metadata filtering functionality.
 
-Tests verify that session, topic, and eventtype metadata fields are correctly
-stored in ChromaDB and can be used for filtering search results.
+Tests verify that lightweight schema metadata fields (session, year, conference, etc.)
+are correctly stored in ChromaDB and can be used for filtering search results.
 """
 
 import pytest
@@ -101,18 +101,21 @@ class TestChromaDBMetadata:
         """
         Test that documents have required metadata fields.
 
-        Verifies that session, topic, and eventtype fields exist in document metadata.
+        Verifies that session, title, authors, and keywords fields exist in
+        document metadata. Note that ChromaDB embeddings only store a subset
+        of the lightweight schema fields for filtering purposes.
         """
         # Get a few documents with metadata
         results = chroma_collection.get(limit=5, include=["metadatas"])
 
         assert len(results["ids"]) > 0, "Should retrieve at least one document"
 
-        # Check first document has required fields
+        # Check first document has required fields stored in ChromaDB
         metadata = results["metadatas"][0]
         assert "session" in metadata, "Metadata should have 'session' field"
-        assert "topic" in metadata, "Metadata should have 'topic' field"
-        assert "eventtype" in metadata, "Metadata should have 'eventtype' field"
+        assert "title" in metadata, "Metadata should have 'title' field"
+        assert "authors" in metadata, "Metadata should have 'authors' field"
+        assert "keywords" in metadata, "Metadata should have 'keywords' field"
 
     def test_filter_by_session(self, chroma_collection):
         """
@@ -137,47 +140,56 @@ class TestChromaDBMetadata:
         for metadata in results["metadatas"]:
             assert metadata.get("session") == test_session, "All results should have the filtered session"
 
-    def test_filter_by_eventtype(self, chroma_collection):
+    def test_filter_by_keywords(self, chroma_collection):
         """
-        Test filtering documents by event type.
+        Test filtering documents by keywords.
 
-        Verifies that the eventtype metadata field can be used to filter search results.
-        Expected event types are "Oral" and "Poster".
+        Verifies that the keywords metadata field can be used to filter search results.
         """
-        # Test with "Poster" event type
-        where_filter = {"eventtype": {"$in": ["Poster"]}}
-        results = chroma_collection.get(where=where_filter, limit=10, include=["metadatas"])
-
-        assert len(results["ids"]) > 0, "Should find documents with eventtype 'Poster'"
-
-        # Verify all results have eventtype "Poster"
-        for metadata in results["metadatas"]:
-            assert metadata.get("eventtype") == "Poster", "All results should have eventtype 'Poster'"
-
-    def test_filter_by_topic(self, chroma_collection):
-        """
-        Test filtering documents by topic.
-
-        Verifies that the topic metadata field can be used to filter search results.
-        """
-        # Get a topic value to test with
+        # Get a document with keywords to test with
         sample_results = chroma_collection.get(limit=10, include=["metadatas"])
-        topics_found = [m.get("topic") for m in sample_results["metadatas"] if m.get("topic")]
+        keywords_found = [m.get("keywords") for m in sample_results["metadatas"] if m.get("keywords")]
 
-        if not topics_found:
-            pytest.skip("No topic metadata available")
+        if not keywords_found:
+            pytest.skip("No keywords metadata available")
 
-        test_topic = topics_found[0]
+        test_keywords = keywords_found[0]
 
-        # Filter by this topic
-        where_filter = {"topic": {"$in": [test_topic]}}
+        # Filter by these keywords
+        where_filter = {"keywords": {"$in": [test_keywords]}}
         results = chroma_collection.get(where=where_filter, limit=10, include=["metadatas"])
 
-        assert len(results["ids"]) > 0, f"Should find documents with topic '{test_topic}'"
+        assert len(results["ids"]) > 0, f"Should find documents with keywords '{test_keywords}'"
 
-        # Verify all results have the correct topic
+        # Verify all results have the correct keywords
         for metadata in results["metadatas"]:
-            assert metadata.get("topic") == test_topic, "All results should have the filtered topic"
+            assert metadata.get("keywords") == test_keywords, "All results should have the filtered keywords"
+
+    def test_filter_by_title(self, chroma_collection):
+        """
+        Test filtering documents by title.
+
+        Verifies that the title metadata field can be used to filter search results
+        using exact matching.
+        """
+        # Get a title value to test with
+        sample_results = chroma_collection.get(limit=10, include=["metadatas"])
+        titles_found = [m.get("title") for m in sample_results["metadatas"] if m.get("title")]
+
+        if not titles_found:
+            pytest.skip("No title metadata available")
+
+        test_title = titles_found[0]
+
+        # Filter by this exact title
+        where_filter = {"title": {"$in": [test_title]}}
+        results = chroma_collection.get(where=where_filter, limit=10, include=["metadatas"])
+
+        assert len(results["ids"]) > 0, f"Should find documents with title '{test_title}'"
+
+        # Verify all results have the correct title
+        for metadata in results["metadatas"]:
+            assert metadata.get("title") == test_title, "All results should have the filtered title"
 
     def test_filter_with_or_operator(self, chroma_collection):
         """
@@ -220,24 +232,24 @@ class TestChromaDBMetadata:
         Verifies that ChromaDB supports $and queries for combining multiple
         filter conditions.
         """
-        # Get a sample document with both session and eventtype
+        # Get a sample document with both session and keywords
         sample_results = chroma_collection.get(limit=10, include=["metadatas"])
 
         # Find a document with both fields
         test_doc = None
         for metadata in sample_results["metadatas"]:
-            if metadata.get("session") and metadata.get("eventtype"):
+            if metadata.get("session") and metadata.get("keywords"):
                 test_doc = metadata
                 break
 
         if not test_doc:
-            pytest.skip("Need document with both session and eventtype")
+            pytest.skip("Need document with both session and keywords")
 
         # Create $and filter
         where_filter = {
             "$and": [
                 {"session": {"$in": [test_doc["session"]]}},
-                {"eventtype": {"$in": [test_doc["eventtype"]]}},
+                {"keywords": {"$in": [test_doc["keywords"]]}},
             ]
         }
 
@@ -248,28 +260,22 @@ class TestChromaDBMetadata:
         # Verify all results match both conditions
         for metadata in results["metadatas"]:
             assert metadata.get("session") == test_doc["session"], "All results should have the filtered session"
-            assert (
-                metadata.get("eventtype") == test_doc["eventtype"]
-            ), "All results should have the filtered eventtype"
+            assert metadata.get("keywords") == test_doc["keywords"], "All results should have the filtered keywords"
 
-    def test_no_invalid_eventtype_values(self, chroma_collection):
+    def test_no_invalid_session_values(self, chroma_collection):
         """
-        Test that eventtype field contains only valid values.
+        Test that session field contains only valid values.
 
-        Verifies that event types are clean values ("Oral", "Poster") and not
-        the raw values with location placeholders ("{location} Poster", etc.).
+        Verifies that session names are properly formatted strings.
         """
-        # Get all documents and check eventtype values
+        # Get all documents and check session values
         results = chroma_collection.get(limit=100, include=["metadatas"])
 
-        valid_eventtypes = {"Oral", "Poster", ""}
-
         for metadata in results["metadatas"]:
-            eventtype = metadata.get("eventtype", "")
-            assert eventtype in valid_eventtypes, f"Eventtype should be 'Oral', 'Poster', or empty, got '{eventtype}'"
-
-            # Specifically check for the old incorrect format
-            assert "{location}" not in eventtype, f"Eventtype should not contain location placeholder: '{eventtype}'"
+            session = metadata.get("session", "")
+            if session:  # If session is present
+                assert isinstance(session, str), "Session should be a string"
+                assert len(session) > 0, "Session should not be empty string if present"
 
     def test_session_format(self, chroma_collection):
         """
@@ -291,7 +297,8 @@ class TestChromaDBMetadata:
         Test that all documents in the collection have metadata.
 
         This is a comprehensive test that checks all documents have the required
-        metadata fields. Marked as slow since it may process many documents.
+        metadata fields stored in ChromaDB. Marked as slow since it may
+        process many documents.
         """
         # Get total count
         total_count = chroma_collection.count()
@@ -301,27 +308,27 @@ class TestChromaDBMetadata:
         results = chroma_collection.get(limit=sample_size, include=["metadatas"])
 
         missing_session = 0
-        missing_topic = 0
-        missing_eventtype = 0
+        missing_title = 0
+        missing_authors = 0
 
         for metadata in results["metadatas"]:
             if not metadata.get("session"):
                 missing_session += 1
-            if not metadata.get("topic"):
-                missing_topic += 1
-            if not metadata.get("eventtype"):
-                missing_eventtype += 1
+            if not metadata.get("title"):
+                missing_title += 1
+            if not metadata.get("authors"):
+                missing_authors += 1
 
         # Allow some missing values but most should be present
         assert (
             missing_session < sample_size * 0.1
         ), f"Too many documents missing session metadata: {missing_session}/{sample_size}"
         assert (
-            missing_topic < sample_size * 0.1
-        ), f"Too many documents missing topic metadata: {missing_topic}/{sample_size}"
+            missing_title < sample_size * 0.1
+        ), f"Too many documents missing title metadata: {missing_title}/{sample_size}"
         assert (
-            missing_eventtype < sample_size * 0.1
-        ), f"Too many documents missing eventtype metadata: {missing_eventtype}/{sample_size}"
+            missing_authors < sample_size * 0.5
+        ), f"Too many documents missing authors metadata: {missing_authors}/{sample_size}"
 
     @pytest.mark.integration
     @pytest.mark.slow

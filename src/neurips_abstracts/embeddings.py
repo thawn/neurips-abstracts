@@ -265,6 +265,48 @@ class EmbeddingsManager:
         except Exception as e:
             raise EmbeddingsError(f"Failed to create collection: {str(e)}") from e
 
+    def paper_exists(self, paper_id: Union[int, str]) -> bool:
+        """
+        Check if a paper already exists in the collection.
+
+        Parameters
+        ----------
+        paper_id : int or str
+            Unique identifier for the paper.
+
+        Returns
+        -------
+        bool
+            True if paper exists in collection, False otherwise.
+
+        Raises
+        ------
+        EmbeddingsError
+            If collection not initialized.
+
+        Examples
+        --------
+        >>> em = EmbeddingsManager()
+        >>> em.connect()
+        >>> em.create_collection()
+        >>> em.paper_exists(1)
+        False
+        >>> em.add_paper(1, "Abstract text")
+        >>> em.paper_exists(1)
+        True
+        """
+        if not self.collection:
+            raise EmbeddingsError("Collection not initialized. Call create_collection() first.")
+
+        try:
+            # Try to get the paper by ID
+            result = self.collection.get(ids=[str(paper_id)])
+            # If the result has any IDs, the paper exists
+            return len(result["ids"]) > 0
+        except Exception as e:
+            logger.warning(f"Error checking if paper {paper_id} exists: {str(e)}")
+            return False
+
     def add_paper(
         self,
         paper_id: Union[int, str],
@@ -314,9 +356,8 @@ class EmbeddingsManager:
             if embedding is None:
                 embedding = self.generate_embedding(abstract)
 
-            # Prepare metadata
+            # Prepare metadata - convert all values to strings for ChromaDB compatibility
             meta = metadata or {}
-            # Convert all metadata values to strings for ChromaDB compatibility
             meta = {k: str(v) if v is not None else "" for k, v in meta.items()}
 
             # Add to collection
@@ -330,95 +371,6 @@ class EmbeddingsManager:
 
         except Exception as e:
             raise EmbeddingsError(f"Failed to add paper {paper_id}: {str(e)}") from e
-
-    def add_papers_batch(
-        self,
-        papers: List[Tuple[Union[int, str], str, Dict[str, Any]]],
-        batch_size: int = 100,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
-    ) -> None:
-        """
-        Add multiple papers to the vector database in batches.
-
-        Parameters
-        ----------
-        papers : List[Tuple[int or str, str, Dict]]
-            List of tuples containing (paper_id, abstract, metadata).
-        batch_size : int, optional
-            Number of papers to process in each batch, by default 100
-        progress_callback : callable, optional
-            Callback function to report progress. Called with number of papers processed.
-
-        Raises
-        ------
-        EmbeddingsError
-            If batch addition fails.
-
-        Examples
-        --------
-        >>> em = EmbeddingsManager()
-        >>> em.connect()
-        >>> em.create_collection()
-        >>> papers = [
-        ...     (1, "Abstract 1", {"title": "Paper 1"}),
-        ...     (2, "Abstract 2", {"title": "Paper 2"}),
-        ... ]
-        >>> em.add_papers_batch(papers)
-        """
-        if not self.collection:
-            raise EmbeddingsError("Collection not initialized. Call create_collection() first.")
-
-        total = len(papers)
-        logger.info(f"Adding {total} papers in batches of {batch_size}")
-
-        for i in range(0, total, batch_size):
-            batch = papers[i : i + batch_size]
-            batch_ids = []
-            batch_embeddings = []
-            batch_documents = []
-            batch_metadatas = []
-
-            for paper_id, abstract, metadata in batch:
-                if not abstract or not abstract.strip():
-                    logger.warning(f"Skipping paper {paper_id}: empty abstract")
-                    continue
-
-                try:
-                    # Generate embedding
-                    embedding = self.generate_embedding(abstract)
-
-                    # Prepare metadata
-                    meta = {k: str(v) if v is not None else "" for k, v in metadata.items()}
-
-                    batch_ids.append(str(paper_id))
-                    batch_embeddings.append(embedding)
-                    batch_documents.append(abstract)
-                    batch_metadatas.append(meta)
-
-                except Exception as e:
-                    logger.error(f"Failed to process paper {paper_id}: {str(e)}")
-                    continue
-
-            # Add batch to collection
-            if batch_ids:
-                try:
-                    self.collection.add(
-                        embeddings=batch_embeddings,
-                        documents=batch_documents,
-                        metadatas=batch_metadatas,
-                        ids=batch_ids,
-                    )
-                    logger.info(
-                        f"Added batch {i // batch_size + 1}/{(total + batch_size - 1) // batch_size} "
-                        f"({len(batch_ids)} papers)"
-                    )
-
-                    # Call progress callback if provided
-                    if progress_callback:
-                        progress_callback(i + len(batch_ids), total)
-
-                except Exception as e:
-                    logger.error(f"Failed to add batch: {str(e)}")
 
     def search_similar(
         self,
@@ -517,7 +469,6 @@ class EmbeddingsManager:
     def embed_from_database(
         self,
         db_path: Union[str, Path],
-        batch_size: int = 100,
         where_clause: Optional[str] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> int:
@@ -530,12 +481,10 @@ class EmbeddingsManager:
         ----------
         db_path : str or Path
             Path to the SQLite database file.
-        batch_size : int, optional
-            Number of papers to process in each batch, by default 100
         where_clause : str, optional
             SQL WHERE clause to filter papers (e.g., "decision = 'Accept'")
         progress_callback : callable, optional
-            Callback function to report progress. Called with number of papers processed.
+            Callback function to report progress. Called with (current, total) number of papers processed.
 
         Returns
         -------
@@ -570,24 +519,12 @@ class EmbeddingsManager:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            # Check which columns exist in the papers table (for backward compatibility)
+            # Check which columns exist in the papers table
             cursor.execute("PRAGMA table_info(papers)")
             columns = {row[1] for row in cursor.fetchall()}
-            has_paper_url = "paper_url" in columns
-            has_poster_position = "poster_position" in columns
-            has_session = "session" in columns
-            has_eventtype = "eventtype" in columns
 
-            # Build query with available columns
-            base_columns = ["id", "name", "abstract", "authors", "topic", "keywords", "decision"]
-            if has_paper_url:
-                base_columns.append("paper_url")
-            if has_poster_position:
-                base_columns.append("poster_position")
-            if has_session:
-                base_columns.append("session")
-            if has_eventtype:
-                base_columns.append("eventtype")
+            # Build query with lightweight schema fields
+            base_columns = ["uid", "title", "abstract", "authors", "keywords", "session"]
 
             query = f"SELECT {', '.join(base_columns)} FROM papers"
             if where_clause:
@@ -603,43 +540,47 @@ class EmbeddingsManager:
                 conn.close()
                 return 0
 
-            # Prepare papers for batch processing
-            papers = []
-            for row in rows:
-                paper_id = row["id"]
-                abstract = row["abstract"]
+            # Process papers one by one
+            embedded_count = 0
+            skipped_count = 0
+            for i, row in enumerate(rows):
+                paper_id = row["uid"]
+                abstract = f"{row['title']}\n\n{row['abstract']}"
 
                 if not abstract or not abstract.strip():
-                    logger.warning(f"Skipping paper {paper_id}: no abstract")
+                    logger.warning(f"Skipping paper {paper_id}: no abstract and no title")
+                    continue
+
+                # Check if paper already exists in the collection
+                if self.paper_exists(paper_id):
+                    logger.debug(f"Skipping paper {paper_id}: already exists in collection")
+                    skipped_count += 1
+                    # Still call progress callback to update the progress bar
+                    if progress_callback:
+                        progress_callback(i + 1, total)
                     continue
 
                 metadata = {
-                    "title": row["name"] or "",
+                    "title": row["title"] or "",
                     "authors": row["authors"] or "",
-                    "topic": row["topic"] or "",
                     "keywords": row["keywords"] or "",
-                    "decision": row["decision"] or "",
+                    "session": row["session"] or "",
                 }
 
-                # Add optional fields if they exist in the database
-                if has_paper_url:
-                    metadata["paper_url"] = row["paper_url"] or ""
-                if has_poster_position:
-                    metadata["poster_position"] = row["poster_position"] or ""
-                if has_session:
-                    metadata["session"] = row["session"] or ""
-                if has_eventtype:
-                    metadata["eventtype"] = row["eventtype"] or ""
+                try:
+                    self.add_paper(paper_id, abstract, metadata)
+                    embedded_count += 1
 
-                papers.append((paper_id, abstract, metadata))
+                    # Call progress callback if provided
+                    if progress_callback:
+                        progress_callback(i + 1, total)
+
+                except Exception as e:
+                    logger.error(f"Failed to embed paper {paper_id}: {str(e)}")
+                    continue
 
             conn.close()
-
-            # Add papers in batches
-            self.add_papers_batch(papers, batch_size=batch_size, progress_callback=progress_callback)
-
-            embedded_count = len(papers)
-            logger.info(f"Successfully embedded {embedded_count} papers")
+            logger.info(f"Successfully embedded {embedded_count} papers, skipped {skipped_count} existing papers")
             return embedded_count
 
         except sqlite3.Error as e:

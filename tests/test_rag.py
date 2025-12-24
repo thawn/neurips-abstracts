@@ -25,50 +25,45 @@ from tests.test_helpers import requires_lm_studio
 
 @pytest.fixture
 def mock_database():
-    """Create a mock database manager that returns papers for IDs 1, 2, 3."""
+    """Create a mock database manager that returns papers for UIDs "1", "2", "3"."""
     mock_db = Mock()
 
-    # Set up mock to return papers based on ID
+    # Set up mock to return papers based on UID (string)
     def mock_query_side_effect(sql, params):
-        paper_id = params[0]
+        paper_uid = params[0] if params else None
         papers_map = {
-            1: {
-                "id": 1,
-                "name": "Attention Is All You Need",
+            "1": {
+                "uid": "1",
+                "title": "Attention Is All You Need",
                 "abstract": "We propose the Transformer...",
-                "topic": "Deep Learning",
-                "decision": "Accept (oral)",
+                "authors": "Vaswani et al.",  # Stored as semicolon-separated string in DB
+                "session": "Oral",
+                "year": 2017,
+                "conference": "NeurIPS",
             },
-            2: {
-                "id": 2,
-                "name": "BERT: Pre-training of Deep Bidirectional Transformers",
+            "2": {
+                "uid": "2",
+                "title": "BERT: Pre-training of Deep Bidirectional Transformers",
                 "abstract": "We introduce BERT...",
-                "topic": "NLP",
-                "decision": "Accept (poster)",
+                "authors": "Devlin et al.",
+                "session": "Poster",
+                "year": 2019,
+                "conference": "NeurIPS",
             },
-            3: {
-                "id": 3,
-                "name": "GPT-3: Language Models are Few-Shot Learners",
+            "3": {
+                "uid": "3",
+                "title": "GPT-3: Language Models are Few-Shot Learners",
                 "abstract": "We train GPT-3...",
-                "topic": "Language Models",
-                "decision": "Accept (oral)",
+                "authors": "Brown et al.",
+                "session": "Oral",
+                "year": 2020,
+                "conference": "NeurIPS",
             },
         }
-        paper = papers_map.get(paper_id)
+        paper = papers_map.get(paper_uid)
         return [paper] if paper else []
 
     mock_db.query.side_effect = mock_query_side_effect
-
-    # Set up authors mock
-    def mock_authors_side_effect(paper_id):
-        authors_map = {
-            1: [{"fullname": "Vaswani et al."}],
-            2: [{"fullname": "Devlin et al."}],
-            3: [{"fullname": "Brown et al."}],
-        }
-        return authors_map.get(paper_id, [])
-
-    mock_db.get_paper_authors.side_effect = mock_authors_side_effect
 
     return mock_db
 
@@ -425,15 +420,14 @@ class TestRAGChatIntegration:
         em.connect()
         em.create_collection(reset=True)
 
-        # Add a test paper
+        # Add a test paper (use string uid to match lightweight schema)
         em.add_paper(
-            paper_id=1,
+            paper_id="1",
             abstract="This paper discusses attention mechanisms in neural networks.",
             metadata={
                 "title": "Attention Mechanisms",
                 "authors": "Test Author",
-                "topic": "Deep Learning",
-                "decision": "Accept",
+                "session": "Test Session",
                 "keywords": "attention, neural networks",
             },
         )
@@ -446,39 +440,24 @@ class TestRAGChatIntegration:
         db.connect()
         db.create_tables()
 
-        # Insert paper into database
+        # Insert paper into database (lightweight schema)
         cursor = db.connection.cursor()
         cursor.execute(
             """
-            INSERT INTO papers (uid, name, abstract, decision, topic, keywords)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO papers (uid, title, abstract, authors, session, poster_position, keywords, year, conference)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                1,
+                "1",  # uid is TEXT in lightweight schema
                 "Attention Mechanisms",
                 "This paper discusses attention mechanisms in neural networks.",
-                "Accept",
-                "Deep Learning",
+                "Test Author",  # authors stored as comma-separated string
+                "Test Session",  # session is required
+                "",  # poster_position
                 "attention, neural networks",
+                2025,  # year is required
+                "NeurIPS",  # conference is required
             ),
-        )
-
-        # Insert author
-        cursor.execute(
-            """
-            INSERT INTO authors (id, fullname)
-            VALUES (?, ?)
-            """,
-            (1, "Test Author"),
-        )
-
-        # Link paper to author
-        cursor.execute(
-            """
-            INSERT INTO paper_authors (paper_id, author_id, author_order)
-            VALUES (?, ?, ?)
-            """,
-            (1, 1, 0),
         )
 
         db.connection.commit()
@@ -515,15 +494,14 @@ class TestRAGChatIntegration:
         em.connect()
         em.create_collection(reset=True)
 
-        # Add test papers
+        # Add test papers (use string uid to match lightweight schema)
         em.add_paper(
-            paper_id=1,
+            paper_id="1",
             abstract="Transformers are a deep learning architecture based on attention.",
             metadata={
                 "title": "Transformers",
                 "authors": "Vaswani et al.",
-                "topic": "Deep Learning",
-                "decision": "Accept (oral)",
+                "session": "Test Session",
                 "keywords": "transformers, attention",
             },
         )
@@ -536,39 +514,24 @@ class TestRAGChatIntegration:
         db.connect()
         db.create_tables()
 
-        # Insert paper into database
+        # Insert paper into database (lightweight schema)
         cursor = db.connection.cursor()
         cursor.execute(
             """
-            INSERT INTO papers (uid, name, abstract, decision, topic, keywords)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO papers (uid, title, abstract, authors, session, poster_position, keywords, year, conference)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                1,
+                "1",  # uid is TEXT in lightweight schema
                 "Transformers",
                 "Transformers are a deep learning architecture based on attention.",
-                "Accept (oral)",
-                "Deep Learning",
+                "Vaswani et al.",  # authors stored as comma-separated string
+                "Test Session",  # session is required
+                "",  # poster_position
                 "transformers, attention",
+                2025,  # year is required
+                "NeurIPS",  # conference is required
             ),
-        )
-
-        # Insert author
-        cursor.execute(
-            """
-            INSERT INTO authors (id, fullname)
-            VALUES (?, ?)
-            """,
-            (1, "Vaswani et al."),
-        )
-
-        # Link paper to author
-        cursor.execute(
-            """
-            INSERT INTO paper_authors (paper_id, author_id, author_order)
-            VALUES (?, ?, ?)
-            """,
-            (1, 1, 0),
         )
 
         db.connection.commit()
@@ -606,14 +569,14 @@ class TestRAGChatIntegration:
         em.connect()
         em.create_collection(reset=True)
 
+        # Add test paper (use string uid to match lightweight schema)
         em.add_paper(
-            paper_id=1,
+            paper_id="1",
             abstract="Test abstract about machine learning.",
             metadata={
                 "title": "ML Paper",
                 "authors": "Author",
-                "topic": "ML",
-                "decision": "Accept",
+                "session": "Test Session",
                 "keywords": "machine learning",
             },
         )
@@ -626,39 +589,24 @@ class TestRAGChatIntegration:
         db.connect()
         db.create_tables()
 
-        # Insert paper into database
+        # Insert paper into database (lightweight schema)
         cursor = db.connection.cursor()
         cursor.execute(
             """
-            INSERT INTO papers (uid, name, abstract, decision, topic, keywords)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO papers (uid, title, abstract, authors, session, poster_position, keywords, year, conference)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                1,
+                "1",  # uid is TEXT in lightweight schema
                 "ML Paper",
                 "Test abstract about machine learning.",
-                "Accept",
-                "ML",
+                "Author",  # authors stored as comma-separated string
+                "Test Session",  # session is required
+                "",  # poster_position
                 "machine learning",
+                2025,  # year is required
+                "NeurIPS",  # conference is required
             ),
-        )
-
-        # Insert author
-        cursor.execute(
-            """
-            INSERT INTO authors (id, fullname)
-            VALUES (?, ?)
-            """,
-            (1, "Author"),
-        )
-
-        # Link paper to author
-        cursor.execute(
-            """
-            INSERT INTO paper_authors (paper_id, author_id, author_order)
-            VALUES (?, ?, ?)
-            """,
-            (1, 1, 0),
         )
 
         db.connection.commit()

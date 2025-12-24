@@ -77,7 +77,7 @@ class TestDownloadEndpoint:
         # Setup database mock
         mock_db = Mock()
         mock_db.query.return_value = [{"count": 0}]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock
@@ -174,7 +174,7 @@ class TestSSEStreaming:
             [{"count": 0}],  # Existing count check
             []  # Papers to embed query
         ]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock
@@ -230,7 +230,7 @@ class TestSSEStreaming:
             [{"count": 0}],  # Existing count check
             []  # Papers to embed query (empty - no papers to embed)
         ]
-        mock_db.load_json_data.return_value = 5
+        mock_db.add_papers.return_value = 5
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock
@@ -287,29 +287,47 @@ class TestSmartEmbeddingOptimization:
 
         # Setup database mock - simulate update scenario
         mock_db = Mock()
-        
+
         # First query: existing papers count (has data)
         # Second query: existing papers before update
         # Third query: all papers after update
         mock_db.query.side_effect = [
             [{"count": 2}],  # 2 existing papers
             [  # Existing papers before update
-                {"id": 1, "uid": "uid1", "name": "Paper 1", "abstract": "Abstract 1"},
-                {"id": 2, "uid": "uid2", "name": "Paper 2", "abstract": "Abstract 2"}
+                {"uid": "uid1", "title": "Paper 1", "abstract": "Abstract 1"},
+                {"uid": "uid2", "title": "Paper 2", "abstract": "Abstract 2"},
             ],
             [  # All papers after update (1 new paper added)
-                {"id": 1, "uid": "uid1", "name": "Paper 1", "abstract": "Abstract 1", "year": 2025, "conference": "NeurIPS"},
-                {"id": 2, "uid": "uid2", "name": "Paper 2", "abstract": "Abstract 2", "year": 2025, "conference": "NeurIPS"},
-                {"id": 3, "uid": "uid3", "name": "Paper 3", "abstract": "Abstract 3", "year": 2025, "conference": "NeurIPS"}
-            ]
+                {
+                    "uid": "uid1",
+                    "title": "Paper 1",
+                    "abstract": "Abstract 1",
+                    "year": 2025,
+                    "conference": "NeurIPS",
+                },
+                {
+                    "uid": "uid2",
+                    "title": "Paper 2",
+                    "abstract": "Abstract 2",
+                    "year": 2025,
+                    "conference": "NeurIPS",
+                },
+                {
+                    "uid": "uid3",
+                    "title": "Paper 3",
+                    "abstract": "Abstract 3",
+                    "year": 2025,
+                    "conference": "NeurIPS",
+                },
+            ],
         ]
-        mock_db.load_json_data.return_value = 1  # 1 new paper added
+        mock_db.add_papers.return_value = 1  # 1 new paper added
         mock_db_class.return_value = mock_db
 
-        # Setup embeddings manager mock - all papers have embeddings
+        # Setup embeddings manager mock - only existing papers have embeddings, new paper needs one
         mock_em = Mock()
         mock_em.collection = Mock()
-        mock_em.collection.get.return_value = {"ids": ["1", "2", "3"]}  # All have embeddings
+        mock_em.collection.get.return_value = {"ids": ["uid1", "uid2"]}  # Only papers 1 and 2 have embeddings
         mock_em.collection.delete = Mock()
         mock_em.generate_embedding.return_value = [0.1] * 384  # Mock embedding vector
         mock_em_class.return_value = mock_em
@@ -327,11 +345,15 @@ class TestSmartEmbeddingOptimization:
                 "/api/download",
                 json={"conference": "NeurIPS", "year": 2025}
             )
-            
+
             data = response.data.decode('utf-8')
-            
-            # Should complete successfully - only new paper was considered
+
+            # Should complete successfully and embed only the new paper
             assert '"stage": "complete"' in data
+            # Should show 1 paper embedded (the new one)
+            assert '"embedded": 1' in data or "embed 1 paper" in data.lower()
+            # Should verify that embedding was generated for the new paper
+            mock_em.generate_embedding.assert_called_once()
 
     @patch("neurips_abstracts.web_ui.app.DatabaseManager")
     @patch("neurips_abstracts.web_ui.app.EmbeddingsManager")
@@ -355,23 +377,38 @@ class TestSmartEmbeddingOptimization:
         # Setup database mock
         mock_db = Mock()
         mock_db.query.side_effect = [
-            [{"count": 2}],  # Existing count
-            [  # Existing papers (old content)
-                {"id": 1, "uid": "uid1", "name": "Paper 1 Old Title", "abstract": "Old abstract"},
-                {"id": 2, "uid": "uid2", "name": "Paper 2", "abstract": "Abstract 2"}
+            # First query: COUNT to check if updating
+            [{"count": 2}],
+            # Second query: Get existing papers for comparison (old content)
+            [
+                {"uid": "uid1", "title": "Paper 1 Old Title", "abstract": "Old abstract"},
+                {"uid": "uid2", "title": "Paper 2", "abstract": "Abstract 2"},
             ],
-            [  # Papers after update (Paper 1 has changed title)
-                {"id": 1, "uid": "uid1", "name": "Paper 1 New Title", "abstract": "Old abstract", "year": 2025, "conference": "NeurIPS"},
-                {"id": 2, "uid": "uid2", "name": "Paper 2", "abstract": "Abstract 2", "year": 2025, "conference": "NeurIPS"}
-            ]
+            # Third query: Get all papers after update (Paper 1 has changed title)
+            [
+                {
+                    "uid": "uid1",
+                    "title": "Paper 1 New Title",
+                    "abstract": "Old abstract",
+                    "year": 2025,
+                    "conference": "NeurIPS",
+                },
+                {
+                    "uid": "uid2",
+                    "title": "Paper 2",
+                    "abstract": "Abstract 2",
+                    "year": 2025,
+                    "conference": "NeurIPS",
+                },
+            ],
         ]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock
         mock_em = Mock()
         mock_em.collection = Mock()
-        mock_em.collection.get.return_value = {"ids": ["1", "2"]}  # Both have embeddings
+        mock_em.collection.get.return_value = {"ids": ["uid1", "uid2"]}  # Both have embeddings
         mock_em.collection.delete = Mock()
         mock_em.generate_embedding.return_value = [0.1] * 384
         mock_em_class.return_value = mock_em
@@ -386,9 +423,9 @@ class TestSmartEmbeddingOptimization:
                 "/api/download",
                 json={"conference": "NeurIPS", "year": 2025}
             )
-            
+
             data = response.data.decode('utf-8')
-            
+
             # Should detect the changed paper and embed it
             assert '"stage": "embeddings"' in data
             # Should show 1 paper to embed (the changed one)
@@ -420,25 +457,46 @@ class TestMissingEmbeddingDetection:
         # Setup database mock
         mock_db = Mock()
         mock_db.query.side_effect = [
-            [{"count": 3}],  # 3 existing papers
-            [  # Existing papers
-                {"id": 1, "uid": "uid1", "name": "Paper 1", "abstract": "Abstract 1"},
-                {"id": 2, "uid": "uid2", "name": "Paper 2", "abstract": "Abstract 2"},
-                {"id": 3, "uid": "uid3", "name": "Paper 3", "abstract": "Abstract 3"}
+            # First query: COUNT to check if updating
+            [{"count": 3}],
+            # Second query: Get existing papers for comparison
+            [
+                {"uid": "uid1", "title": "Paper 1", "abstract": "Abstract 1"},
+                {"uid": "uid2", "title": "Paper 2", "abstract": "Abstract 2"},
+                {"uid": "uid3", "title": "Paper 3", "abstract": "Abstract 3"},
             ],
-            [  # Papers after update (no changes)
-                {"id": 1, "uid": "uid1", "name": "Paper 1", "abstract": "Abstract 1", "year": 2025, "conference": "NeurIPS"},
-                {"id": 2, "uid": "uid2", "name": "Paper 2", "abstract": "Abstract 2", "year": 2025, "conference": "NeurIPS"},
-                {"id": 3, "uid": "uid3", "name": "Paper 3", "abstract": "Abstract 3", "year": 2025, "conference": "NeurIPS"}
-            ]
+            # Third query: Get all papers after update (no changes)
+            [
+                {
+                    "uid": "uid1",
+                    "title": "Paper 1",
+                    "abstract": "Abstract 1",
+                    "year": 2025,
+                    "conference": "NeurIPS",
+                },
+                {
+                    "uid": "uid2",
+                    "title": "Paper 2",
+                    "abstract": "Abstract 2",
+                    "year": 2025,
+                    "conference": "NeurIPS",
+                },
+                {
+                    "uid": "uid3",
+                    "title": "Paper 3",
+                    "abstract": "Abstract 3",
+                    "year": 2025,
+                    "conference": "NeurIPS",
+                },
+            ],
         ]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock - only paper 1 and 2 have embeddings, paper 3 is missing
         mock_em = Mock()
         mock_em.collection = Mock()
-        mock_em.collection.get.return_value = {"ids": ["1", "2"]}  # Paper 3 missing embedding
+        mock_em.collection.get.return_value = {"ids": ["uid1", "uid2"]}  # Paper 3 missing embedding
         mock_em.collection.delete = Mock()
         mock_em.generate_embedding.return_value = [0.1] * 384
         mock_em_class.return_value = mock_em
@@ -453,9 +511,9 @@ class TestMissingEmbeddingDetection:
                 "/api/download",
                 json={"conference": "NeurIPS", "year": 2025}
             )
-            
+
             data = response.data.decode('utf-8')
-            
+
             # Should detect missing embedding and create it
             assert '"stage": "embeddings"' in data
             # Should show 1 paper to embed (paper 3 with missing embedding)
@@ -484,10 +542,18 @@ class TestMissingEmbeddingDetection:
         mock_db = Mock()
         mock_db.query.side_effect = [
             [{"count": 1}],  # Existing count
-            [{"id": 1, "uid": "uid1", "name": "Paper 1", "abstract": "Abstract 1"}],
-            [{"id": 1, "uid": "uid1", "name": "Paper 1", "abstract": "Abstract 1", "year": 2025, "conference": "NeurIPS"}]
+            [{"uid": "uid1", "title": "Paper 1", "abstract": "Abstract 1"}],
+            [
+                {
+                    "uid": "uid1",
+                    "title": "Paper 1",
+                    "abstract": "Abstract 1",
+                    "year": 2025,
+                    "conference": "NeurIPS",
+                }
+            ],
         ]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock - ChromaDB query fails
@@ -507,9 +573,9 @@ class TestMissingEmbeddingDetection:
                 "/api/download",
                 json={"conference": "NeurIPS", "year": 2025}
             )
-            
+
             data = response.data.decode('utf-8')
-            
+
             # Should continue and treat all papers as needing embeddings
             assert '"stage": "embeddings"' in data or '"stage": "complete"' in data
 
@@ -542,7 +608,7 @@ class TestConnectionManagement:
             [{"count": 0}],
             []
         ]
-        mock_db.load_json_data.return_value = 0
+        mock_db.add_papers.return_value = 0
         mock_db.close = Mock()
         mock_db_class.return_value = mock_db
 
@@ -647,12 +713,12 @@ class TestProgressTracking:
         # Setup database mock
         mock_db = Mock()
         mock_db.query.side_effect = [
+            # First query: COUNT to check if updating (returns 0 for fresh download)
             [{"count": 0}],
-            [  # One paper to embed
-                {"id": 1, "uid": "uid1", "name": "Paper 1", "abstract": "Abstract 1", "year": 2025, "conference": "NeurIPS"}
-            ]
+            # Second query: Get all papers after adding them
+            [{"uid": "uid1", "title": "Paper 1", "abstract": "Abstract 1", "year": 2025, "conference": "NeurIPS"}],
         ]
-        mock_db.load_json_data.return_value = 1
+        mock_db.add_papers.return_value = 1
         mock_db_class.return_value = mock_db
 
         # Setup embeddings manager mock
@@ -674,15 +740,15 @@ class TestProgressTracking:
                 "/api/download",
                 json={"conference": "NeurIPS", "year": 2025}
             )
-            
+
             data = response.data.decode('utf-8')
-            
+
             # Should have all three stages
             assert '"stage": "download"' in data
             assert '"stage": "database"' in data
             assert '"stage": "embeddings"' in data
             assert '"stage": "complete"' in data
-            
+
             # Should have progress indicators
             assert '"progress"' in data
             assert '"message"' in data

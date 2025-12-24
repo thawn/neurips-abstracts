@@ -26,7 +26,7 @@ from tests.test_helpers import requires_lm_studio, find_free_port
 
 
 @pytest.fixture(scope="module")
-def test_database(tmp_path_factory):
+def test_database(tmp_path_factory, web_test_papers):
     """
     Create a test database with sample data.
 
@@ -34,67 +34,28 @@ def test_database(tmp_path_factory):
     ----------
     tmp_path_factory : TempPathFactory
         Pytest fixture for creating temporary directories
+    web_test_papers : list
+        List of test papers from shared fixture
 
     Returns
     -------
     Path
         Path to the test database
+
+    Notes
+    -----
+    Uses the shared web_test_papers fixture from conftest.py to ensure
+    consistency across web-related tests.
     """
     tmp_dir = tmp_path_factory.mktemp("data")
     db_path = tmp_dir / "test_web_integration.db"
 
-    # Create database and add test data
+    # Create database and add test data using LightweightPaper
     db = DatabaseManager(str(db_path))
 
     with db:
         db.create_tables()
-
-        cursor = db.connection.cursor()
-
-        # Add test papers
-        papers_data = [
-            (
-                "test1",
-                "Attention is All You Need",
-                "We propose the Transformer, a model architecture based solely on attention mechanisms.",
-                "Accept (oral)",
-            ),
-            (
-                "test2",
-                "BERT: Pre-training of Deep Bidirectional Transformers",
-                "We introduce BERT, which stands for Bidirectional Encoder Representations from Transformers.",
-                "Accept (poster)",
-            ),
-            (
-                "test3",
-                "Deep Residual Learning for Image Recognition",
-                "We present a residual learning framework to ease the training of networks.",
-                "Accept (oral)",
-            ),
-        ]
-
-        paper_ids = []
-        for uid, name, abstract, decision in papers_data:
-            cursor.execute(
-                """
-                INSERT INTO papers (uid, name, abstract, decision)
-                VALUES (?, ?, ?, ?)
-                """,
-                (uid, name, abstract, decision),
-            )
-            paper_ids.append(cursor.lastrowid)
-
-        # Add authors
-        authors_data = [
-            ("Ashish Vaswani", "Google Brain"),
-            ("Jacob Devlin", "Google AI"),
-            ("Kaiming He", "Microsoft Research"),
-        ]
-
-        for i, (fullname, institution) in enumerate(authors_data):
-            cursor.execute("INSERT INTO authors (fullname, institution) VALUES (?, ?)", (fullname, institution))
-
-        db.connection.commit()
+        db.add_papers(web_test_papers)
 
     return db_path
 
@@ -267,7 +228,7 @@ class TestWebUIIntegration:
         """Test getting paper details."""
         host, port, base_url = web_server
 
-        # First, search for a paper to get its ID
+        # First, search for a paper to get its UID
         search_data = {"query": "attention", "use_embeddings": False, "limit": 1}
 
         response = requests.post(f"{base_url}/api/search", json=search_data, timeout=5)
@@ -276,16 +237,16 @@ class TestWebUIIntegration:
         papers = response.json()["papers"]
 
         if papers:
-            paper_id = papers[0]["id"]
+            paper_uid = papers[0]["uid"]
 
             # Get paper details
-            response = requests.get(f"{base_url}/api/paper/{paper_id}", timeout=5)
+            response = requests.get(f"{base_url}/api/paper/{paper_uid}", timeout=5)
             assert response.status_code == 200
 
             paper = response.json()
-            assert "id" in paper
-            assert "name" in paper
-            assert paper["id"] == paper_id
+            assert "uid" in paper
+            assert "title" in paper
+            assert paper["uid"] == paper_uid
 
     def test_api_paper_not_found(self, web_server):
         """Test getting a non-existent paper."""
@@ -472,14 +433,14 @@ class TestWebUIIntegration:
         # If we got results, check paper structure
         if data["papers"]:
             paper = data["papers"][0]
-            required_fields = ["id", "name", "abstract"]
+            required_fields = ["uid", "title", "abstract"]
             for field in required_fields:
                 assert field in paper, f"Missing required field: {field}"
 
-            # At least one paper should contain "attention" in name or abstract
+            # At least one paper should contain "attention" in title or abstract
             found_match = False
             for p in data["papers"]:
-                if "attention" in p.get("name", "").lower() or "attention" in p.get("abstract", "").lower():
+                if "attention" in p.get("title", "").lower() or "attention" in p.get("abstract", "").lower():
                     found_match = True
                     break
             assert found_match, "No papers matched the search query"
@@ -810,10 +771,10 @@ class TestWebUIPaperEndpointDetails:
             papers = search_response.json()["papers"]
 
             if papers:
-                paper_id = papers[0]["id"]
+                paper_uid = papers[0]["uid"]
 
                 # Get full paper details
-                response = requests.get(f"{base_url}/api/paper/{paper_id}", timeout=5)
+                response = requests.get(f"{base_url}/api/paper/{paper_uid}", timeout=5)
 
                 assert response.status_code == 200
                 paper = response.json()

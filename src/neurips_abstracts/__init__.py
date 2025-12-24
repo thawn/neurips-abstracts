@@ -68,7 +68,7 @@ For simpler use cases, use `LightweightDownloaderPlugin` which only requires ess
 
     from neurips_abstracts.plugins import (
         LightweightDownloaderPlugin,
-        convert_lightweight_to_neurips_schema,
+        LightweightPaper,
         register_plugin
     )
 
@@ -78,28 +78,24 @@ For simpler use cases, use `LightweightDownloaderPlugin` which only requires ess
         supported_years = [2025]
 
         def download(self, year=None, output_path=None, force_download=False, **kwargs):
-            # Return papers in lightweight format
-            papers = [
+            # Return papers in lightweight format as LightweightPaper objects
+            papers_data = [
                 {
-                    'id': 1,
                     'title': 'Paper Title',
                     'authors': ['John Doe', 'Jane Smith'],
                     'abstract': 'Paper abstract...',
                     'session': 'Morning Session',
                     'poster_position': 'A1',
+                    'year': year,
+                    'conference': 'MyWorkshop',
                     'paper_pdf_url': 'https://example.com/paper.pdf',  # optional
                     'url': 'https://example.com/paper',  # optional
                     'keywords': ['ML', 'Physics'],  # optional
                 }
             ]
 
-            # Convert to full schema
-            return convert_lightweight_to_neurips_schema(
-                papers,
-                session_default='My Workshop 2025',
-                event_type='Workshop Poster',
-                source_url='https://myworkshop.com'
-            )
+            # Return as LightweightPaper objects
+            return [LightweightPaper(**paper) for paper in papers_data]
 
         def get_metadata(self):
             return {
@@ -124,7 +120,6 @@ from .plugins import (
     get_plugin,
     list_plugins,
     list_plugin_names,
-    convert_lightweight_to_neurips_schema,
 )
 
 # Import plugins to auto-register them
@@ -146,5 +141,4 @@ __all__ = [
     "get_plugin",
     "list_plugins",
     "list_plugin_names",
-    "convert_lightweight_to_neurips_schema",
 ]

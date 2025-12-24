@@ -25,18 +25,13 @@ from neurips_abstracts.plugin import (
     list_plugins,
     list_plugin_names,
     # Conversion utilities
-    convert_lightweight_to_neurips_schema,
+    convert_neurips_to_lightweight_schema,
     # Pydantic models
-    LightweightAuthor,
     LightweightPaper,
-    EventMediaModel,
-    AuthorModel,
-    PaperModel,
     # Validation functions
+    sanitize_author_names,
     validate_lightweight_paper,
     validate_lightweight_papers,
-    validate_paper,
-    validate_papers,
 )
 
 # Import actual plugin implementations
@@ -56,18 +51,13 @@ __all__ = [
     "list_plugins",
     "list_plugin_names",
     # Conversion utilities
-    "convert_lightweight_to_neurips_schema",
+    "convert_neurips_to_lightweight_schema",
     # Pydantic models
-    "LightweightAuthor",
     "LightweightPaper",
-    "EventMediaModel",
-    "AuthorModel",
-    "PaperModel",
     # Validation functions
+    "sanitize_author_names",
     "validate_lightweight_paper",
     "validate_lightweight_papers",
-    "validate_paper",
-    "validate_papers",
     # Plugin implementations
     "ICLRDownloaderPlugin",
     "ICMLDownloaderPlugin",

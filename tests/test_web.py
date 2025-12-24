@@ -55,7 +55,7 @@ def client(app):
 
 
 @pytest.fixture
-def test_db(tmp_path):
+def test_db(tmp_path, web_test_papers):
     """
     Create a test database with sample papers for web testing.
 
@@ -63,6 +63,8 @@ def test_db(tmp_path):
     ----------
     tmp_path : Path
         Temporary directory path
+    web_test_papers : list
+        List of test papers from shared fixture
 
     Returns
     -------
@@ -71,67 +73,15 @@ def test_db(tmp_path):
 
     Notes
     -----
-    This fixture creates a database with authors table and specific test papers
-    for web interface testing. It's kept separate from conftest.py's test_database
-    fixture as it has a different structure with authors.
+    Uses the shared web_test_papers fixture from conftest.py to ensure
+    consistency across web-related tests.
     """
     db_path = tmp_path / "test.db"
     db = DatabaseManager(str(db_path))
 
     with db:
         db.create_tables()
-
-        # Add some test papers
-        cursor = db.connection.cursor()
-
-        # Paper 1
-        cursor.execute(
-            """
-            INSERT INTO papers (uid, name, abstract, decision)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                "test1",
-                "Attention is All You Need",
-                "We propose the Transformer, a model architecture based solely on attention mechanisms.",
-                "Accept (oral)",
-            ),
-        )
-
-        # Paper 2
-        cursor.execute(
-            """
-            INSERT INTO papers (uid, name, abstract, decision)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                "test2",
-                "BERT: Pre-training of Deep Bidirectional Transformers",
-                "We introduce BERT, which stands for Bidirectional Encoder Representations from Transformers.",
-                "Accept (poster)",
-            ),
-        )
-
-        # Paper 3
-        cursor.execute(
-            """
-            INSERT INTO papers (uid, name, abstract, decision)
-            VALUES (?, ?, ?, ?)
-            """,
-            (
-                "test3",
-                "Deep Residual Learning for Image Recognition",
-                "We present a residual learning framework to ease the training of networks.",
-                "Accept (oral)",
-            ),
-        )
-
-        # Add authors (using fullname as per actual schema)
-        cursor.execute("INSERT INTO authors (fullname) VALUES (?)", ("Ashish Vaswani",))
-        cursor.execute("INSERT INTO authors (fullname) VALUES (?)", ("Jacob Devlin",))
-        cursor.execute("INSERT INTO authors (fullname) VALUES (?)", ("Kaiming He",))
-
-        db.connection.commit()
+        db.add_papers(web_test_papers)
 
     return db
 
@@ -363,7 +313,7 @@ class TestDatabaseSearchIntegration:
             results = test_db.search_papers(keyword="attention")
             assert isinstance(results, list)
 
-            results = test_db.search_papers(decision="Accept (oral)")
+            results = test_db.search_papers(year=2017)
             assert isinstance(results, list)
 
             results = test_db.search_papers(limit=5)

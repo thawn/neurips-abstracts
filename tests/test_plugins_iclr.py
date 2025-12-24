@@ -89,14 +89,14 @@ class TestICLRPlugin:
         call_args = mock_get.call_args
         assert call_args[0][0] == "https://iclr.cc/static/virtual/data/iclr-2025-orals-posters.json"
 
-        # Verify the data structure
-        assert data["count"] == 2
-        assert len(data["results"]) == 2
+        # Verify the data structure - now returns List[LightweightPaper]
+        assert isinstance(data, list)
+        assert len(data) == 2
 
         # Verify year and conference were added
-        for paper in data["results"]:
-            assert paper["year"] == 2025
-            assert paper["conference"] == "ICLR"
+        for paper in data:
+            assert paper.year == 2025
+            assert paper.conference == "ICLR"
 
     @patch("neurips_abstracts.plugins.json_conference_downloader.requests.get")
     def test_download_with_default_year(self, mock_get):
@@ -106,7 +106,7 @@ class TestICLRPlugin:
             "count": 1,
             "next": None,
             "previous": None,
-            "results": [{"id": 1, "name": "Test Paper"}],
+            "results": [{"id": 1, "name": "Test Paper", "authors": [{"fullname": "Test Author"}]}],
         }
         mock_get.return_value = mock_response
 
@@ -117,8 +117,10 @@ class TestICLRPlugin:
         call_args = mock_get.call_args
         assert "iclr-2025-orals-posters.json" in call_args[0][0]
 
-        # Verify year was set to 2025
-        assert data["results"][0]["year"] == 2025
+        # Verify year was set to 2025 - returns List[LightweightPaper]
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0].year == 2025
 
     @patch("neurips_abstracts.plugins.json_conference_downloader.requests.get")
     def test_download_with_save_to_file(self, mock_get):
@@ -128,7 +130,9 @@ class TestICLRPlugin:
             "count": 1,
             "next": None,
             "previous": None,
-            "results": [{"id": 1, "name": "Test Paper", "abstract": "Test abstract"}],
+            "results": [
+                {"id": 1, "name": "Test Paper", "abstract": "Test abstract", "authors": [{"fullname": "Test Author"}]}
+            ],
         }
         mock_get.return_value = mock_response
 
@@ -141,26 +145,32 @@ class TestICLRPlugin:
             # Verify file was created
             assert output_path.exists()
 
-            # Verify file contents
+            # Verify file contents - now saves as list of paper dicts
             with open(output_path, "r") as f:
                 saved_data = json.load(f)
 
-            assert saved_data["count"] == 1
-            assert saved_data["results"][0]["year"] == 2025
-            assert saved_data["results"][0]["conference"] == "ICLR"
+            assert isinstance(saved_data, list)
+            assert len(saved_data) == 1
+            assert saved_data[0]["year"] == 2025
+            assert saved_data[0]["conference"] == "ICLR"
 
     def test_download_load_from_existing_file(self):
         """Test loading data from existing file without re-downloading."""
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "iclr_2025.json"
 
-            # Create a mock file
-            test_data = {
-                "count": 1,
-                "next": None,
-                "previous": None,
-                "results": [{"id": 1, "name": "Cached Paper", "year": 2025, "conference": "ICLR"}],
-            }
+            # Create a mock file with lightweight format (list of paper dicts)
+            test_data = [
+                {
+                    "title": "Cached Paper",
+                    "abstract": "Test abstract",
+                    "authors": ["Test Author"],
+                    "session": "Test Session",
+                    "poster_position": "A1",  # Required field
+                    "year": 2025,
+                    "conference": "ICLR",
+                }
+            ]
 
             with open(output_path, "w") as f:
                 json.dump(test_data, f)
@@ -173,8 +183,10 @@ class TestICLRPlugin:
                 # requests.get should NOT have been called
                 mock_get.assert_not_called()
 
-                # Data should match what was in the file
-                assert data["results"][0]["name"] == "Cached Paper"
+                # Data should be List[LightweightPaper]
+                assert isinstance(data, list)
+                assert len(data) == 1
+                assert data[0].title == "Cached Paper"
 
     @patch("neurips_abstracts.plugins.json_conference_downloader.requests.get")
     def test_download_force_redownload(self, mock_get):
@@ -184,7 +196,7 @@ class TestICLRPlugin:
             "count": 1,
             "next": None,
             "previous": None,
-            "results": [{"id": 1, "name": "Fresh Paper"}],
+            "results": [{"id": 1, "name": "Fresh Paper", "authors": [{"fullname": "Test Author"}]}],
         }
         mock_get.return_value = mock_response
 
@@ -202,8 +214,10 @@ class TestICLRPlugin:
             # Should have made the request
             mock_get.assert_called_once()
 
-            # Should have the new data
-            assert data["results"][0]["name"] == "Fresh Paper"
+            # Should have the new data - returns List[LightweightPaper]
+            assert isinstance(data, list)
+            assert len(data) == 1
+            assert data[0].title == "Fresh Paper"
 
     @patch("neurips_abstracts.plugins.json_conference_downloader.requests.get")
     def test_download_request_exception(self, mock_get):
@@ -289,39 +303,31 @@ class TestICLRPluginDatabaseIntegration:
         with tempfile.TemporaryDirectory() as tmpdir:
             db_path = Path(tmpdir) / "test_iclr.db"
 
-            # Download data
+            # Download data (returns List[LightweightPaper])
             plugin = ICLRDownloaderPlugin()
             data = plugin.download(year=2025)
 
             # Create database and load data
             with DatabaseManager(str(db_path)) as db:
                 db.create_tables()
-                db.load_json_data(data)
+                db.add_papers(data)
 
-                # Verify paper was stored
-                papers = db.query("SELECT id, name, abstract, year, conference FROM papers")
+                # Verify paper was stored (lightweight schema uses 'title' not 'name', and 'uid' not 'id')
+                papers = db.query("SELECT uid, title, abstract, year, conference, authors FROM papers")
                 assert len(papers) == 1
 
                 paper = papers[0]
-                assert paper["name"] == "Test ICLR Paper"
+                assert paper["title"] == "Test ICLR Paper"
                 assert paper["abstract"] == "This is a test abstract for ICLR"
                 assert paper["year"] == 2025
                 assert paper["conference"] == "ICLR"
 
-                # Verify authors using the junction table
-                authors = db.query(
-                    """
-                    SELECT a.fullname 
-                    FROM authors a
-                    JOIN paper_authors pa ON a.id = pa.author_id
-                    WHERE pa.paper_id = ?
-                    ORDER BY pa.author_order
-                    """,
-                    (paper["id"],),
-                )
-                assert len(authors) == 2
-                assert authors[0]["fullname"] == "Alice Smith"
-                assert authors[1]["fullname"] == "Bob Jones"
+                # Verify authors (lightweight schema stores as semicolon-separated string)
+                authors_str = paper["authors"]
+                assert "Alice Smith" in authors_str
+                assert "Bob Jones" in authors_str
+                # Verify semicolon separator is used
+                assert ";" in authors_str
 
 
 class TestICLRPluginRegistration:

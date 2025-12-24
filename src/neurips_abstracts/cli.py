@@ -54,7 +54,6 @@ def create_embeddings_command(args: argparse.Namespace) -> int:
         - db_path: Path to the SQLite database with papers
         - output: Path for the ChromaDB vector database
         - collection: Name for the ChromaDB collection
-        - batch_size: Number of papers to process at once
         - lm_studio_url: URL for LM Studio API
         - model: Name of the embedding model
         - force: Whether to reset existing collection
@@ -127,7 +126,7 @@ def create_embeddings_command(args: argparse.Namespace) -> int:
         em.create_collection(reset=args.force)
 
         # Generate embeddings with progress bar
-        print(f"\n🚀 Generating embeddings (batch size: {args.batch_size})...")
+        print(f"\n🚀 Generating embeddings...")
 
         # Determine total count for progress bar
         with DatabaseManager(db_path) as db:
@@ -147,7 +146,6 @@ def create_embeddings_command(args: argparse.Namespace) -> int:
 
             embedded_count = em.embed_from_database(
                 db_path=db_path,
-                batch_size=args.batch_size,
                 where_clause=args.where,
                 progress_callback=update_progress,
             )
@@ -352,7 +350,8 @@ def chat_command(args: argparse.Namespace) -> int:
         - embeddings_path: Path to ChromaDB database
         - collection: Name of the collection
         - lm_studio_url: LM Studio API URL
-        - model: Language model name
+        - model: Language model name for chat
+        - embedding_model: Embedding model name
         - max_context: Maximum papers to use as context
         - temperature: Sampling temperature
         - export: Path to export conversation
@@ -370,7 +369,8 @@ def chat_command(args: argparse.Namespace) -> int:
         print("=" * 70)
         print(f"Embeddings: {embeddings_path}")
         print(f"Collection: {args.collection}")
-        print(f"Model: {args.model}")
+        print(f"Chat Model: {args.model}")
+        print(f"Embedding Model: {args.embedding_model}")
         print(f"LM Studio: {args.lm_studio_url}")
         print("=" * 70)
 
@@ -386,7 +386,7 @@ def chat_command(args: argparse.Namespace) -> int:
             chroma_path=embeddings_path,
             collection_name=args.collection,
             lm_studio_url=args.lm_studio_url,
-            model_name=args.model,
+            model_name=args.embedding_model,
         )
 
         # Test LM Studio connection
@@ -401,6 +401,9 @@ def chat_command(args: argparse.Namespace) -> int:
 
         # Connect to embeddings
         em.connect()
+
+        # Get or create the collection (should already exist for chat)
+        em.create_collection(reset=False)
 
         # Get collection stats
         stats = em.get_collection_stats()
@@ -568,15 +571,15 @@ def download_command(args: argparse.Namespace) -> int:
 
         # Download data using plugin
         json_path = output_path.parent / f"{plugin_name}_{args.year}.json"
-        data = plugin.download(year=args.year, output_path=str(json_path), force_download=args.force, **kwargs)
+        papers = plugin.download(year=args.year, output_path=str(json_path), force_download=args.force, **kwargs)
 
-        print(f"✅ Downloaded {data.get('count', 0):,} papers")
+        print(f"✅ Downloaded {len(papers):,} papers")
 
         # Create database
         print(f"\n📊 Creating database: {output_path}")
         with DatabaseManager(output_path) as db:
             db.create_tables()
-            count = db.load_json_data(data)
+            count = db.add_papers(papers)
             print(f"✅ Loaded {count:,} papers into database")
 
         print(f"\n💾 Database saved to: {output_path}")
@@ -699,10 +702,10 @@ Available plugins:
 
 Examples:
   # Download NeurIPS 2025 papers
-  neurips-abstracts download --plugin neurips --year 2025 --output neurips_2025.db
+  neurips-abstracts download --plugin neurips --year 2025 --output data/neurips_2025.db
   
   # Download ML4PS 2025 workshop papers with abstracts
-  neurips-abstracts download --plugin ml4ps --year 2025 --output ml4ps_2025.db
+  neurips-abstracts download --plugin ml4ps --year 2025 --output data/ml4ps_2025.db
   
   # List available plugins
   neurips-abstracts download --list-plugins
@@ -723,8 +726,8 @@ Examples:
     download_parser.add_argument(
         "--output",
         type=str,
-        default="neurips.db",
-        help="Output database file path (default: neurips.db)",
+        default=config.paper_db_path,
+        help=f"Output database file path (default: {config.paper_db_path})",
     )
     download_parser.add_argument(
         "--force",
@@ -752,7 +755,7 @@ Examples:
     embeddings_parser.add_argument(
         "--db-path",
         type=str,
-        required=True,
+        default=config.paper_db_path,
         help="Path to the SQLite database with papers",
     )
     embeddings_parser.add_argument(
@@ -766,12 +769,6 @@ Examples:
         type=str,
         default=config.collection_name,
         help=f"Name for the ChromaDB collection (default: {config.collection_name})",
-    )
-    embeddings_parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=100,
-        help="Number of papers to process at once (default: 100)",
     )
     embeddings_parser.add_argument(
         "--lm-studio-url",
@@ -885,7 +882,13 @@ Examples:
         "--model",
         type=str,
         default=config.chat_model,
-        help=f"Name of the language model (default: {config.chat_model})",
+        help=f"Name of the language model for chat (default: {config.chat_model})",
+    )
+    chat_parser.add_argument(
+        "--embedding-model",
+        type=str,
+        default=config.embedding_model,
+        help=f"Name of the embedding model (default: {config.embedding_model})",
     )
     chat_parser.add_argument(
         "--max-context",

@@ -15,7 +15,6 @@ from neurips_abstracts.plugins.ml4ps_downloader import ML4PSDownloaderPlugin
 from neurips_abstracts.plugins import (
     LightweightDownloaderPlugin,
     DownloaderPlugin,
-    convert_lightweight_to_neurips_schema,
     get_plugin,
     list_plugins,
 )
@@ -401,8 +400,9 @@ class TestML4PSFullPipeline:
 
         result = ml4ps_plugin.download(year=2025)
 
-        assert result["count"] == 2
-        assert len(result["results"]) == 2
+        # Result is now a list of LightweightPaper objects
+        assert isinstance(result, list)
+        assert len(result) == 2
         mock_scrape.assert_called_once()
         mock_fetch.assert_called_once()
 
@@ -414,7 +414,9 @@ class TestML4PSFullPipeline:
 
         result = ml4ps_plugin.download(year=2025)
 
-        assert result["count"] == 2
+        # Result is now a list of LightweightPaper objects
+        assert isinstance(result, list)
+        assert len(result) == 2
         mock_scrape.assert_called_once()
         mock_fetch.assert_called_once()
 
@@ -430,99 +432,36 @@ class TestML4PSFullPipeline:
         assert output_file.exists()
         with open(output_file) as f:
             saved_data = json.load(f)
-        assert saved_data["count"] == result["count"]
+        # saved_data is a list of paper dicts, result is a list of LightweightPaper objects
+        assert len(saved_data) == len(result)
 
     @patch.object(ML4PSDownloaderPlugin, "_scrape_papers")
     def test_download_loads_from_existing_file(self, mock_scrape, ml4ps_plugin, tmp_path):
         """Test that download loads from existing file when force_download=False."""
         output_file = tmp_path / "ml4ps_output.json"
 
-        # Create existing file
-        existing_data = {
-            "count": 1,
-            "next": None,
-            "previous": None,
-            "results": [{"id": 999, "name": "Cached Paper"}],
-        }
+        # Create existing file with lightweight format (list of paper dicts)
+        existing_data = [
+            {
+                "title": "Cached Paper",
+                "abstract": "Test abstract",
+                "authors": ["Test Author"],
+                "session": "Test Session",
+                "poster_position": "1",
+                "year": 2025,
+                "conference": "NeurIPS",
+            }
+        ]
         with open(output_file, "w") as f:
             json.dump(existing_data, f)
 
         result = ml4ps_plugin.download(year=2025, output_path=str(output_file), force_download=False)
 
         # Should load from file, not scrape
-        assert result["count"] == 1
-        assert result["results"][0]["id"] == 999
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0].title == "Cached Paper"
         mock_scrape.assert_not_called()
-
-
-# ============================================================================
-# Integration Tests - Schema Conversion
-# ============================================================================
-
-
-class TestML4PSSchemaConversion:
-    """Test conversion from lightweight to full NeurIPS schema."""
-
-    def test_lightweight_to_full_schema(self, sample_lightweight_papers):
-        """Test converting lightweight format to full NeurIPS schema."""
-        result = convert_lightweight_to_neurips_schema(
-            sample_lightweight_papers,
-            session_default="ML4PhysicalSciences 2025 Workshop",
-            event_type="Workshop Poster",
-            source_url="https://ml4physicalsciences.github.io/2025/",
-        )
-
-        assert result["count"] == 2
-        assert len(result["results"]) == 2
-
-        paper1 = result["results"][0]
-        assert paper1["id"] == 1
-        assert paper1["name"] == "Test Paper Title One"
-        assert len(paper1["authors"]) == 2
-        assert paper1["authors"][0]["fullname"] == "John Doe"
-        assert paper1["session"] == "ML4PhysicalSciences 2025 Workshop"
-        assert paper1["event_type"] == "Workshop Poster"
-        assert paper1["sourceurl"] == "https://ml4physicalsciences.github.io/2025/"
-
-    def test_eventmedia_generation(self, sample_lightweight_papers):
-        """Test that eventmedia is generated correctly."""
-        result = convert_lightweight_to_neurips_schema(
-            sample_lightweight_papers,
-            session_default="ML4PhysicalSciences 2025 Workshop",
-            event_type="Workshop Poster",
-        )
-
-        paper1 = result["results"][0]
-        assert "eventmedia" in paper1
-        assert len(paper1["eventmedia"]) > 0
-
-        # Check for URL, Poster, and PDF
-        types = [media["type"] for media in paper1["eventmedia"]]
-        assert "URL" in types  # OpenReview URL
-        assert "Poster" in types
-        assert "PDF" in types
-
-    def test_award_field_conversion(self):
-        """Test that award field is converted to decision field."""
-        papers = [
-            {
-                "title": "Award Winning Paper",
-                "authors": ["Alice", "Bob"],
-                "abstract": "This paper won an award.",
-                "session": "Test Session",
-                "poster_position": "A1",
-                "award": "Best Paper Award",
-            }
-        ]
-
-        result = convert_lightweight_to_neurips_schema(
-            papers,
-            session_default="Test Session",
-            event_type="Workshop Poster",
-        )
-
-        paper = result["results"][0]
-        assert paper["decision"] == "Best Paper Award"
 
 
 # ============================================================================
@@ -563,16 +502,18 @@ class TestML4PSEndToEnd:
             max_workers=10,
         )
 
-        assert result["count"] > 0
-        assert len(result["results"]) > 0
+        # Result is now a list of LightweightPaper objects
+        assert isinstance(result, list)
+        assert len(result) > 0
         assert output_file.exists()
 
-        # Verify schema
-        first_paper = result["results"][0]
-        assert "id" in first_paper
-        assert "name" in first_paper
-        assert "authors" in first_paper
-        assert "session" in first_paper
+        # Verify schema - papers are LightweightPaper objects
+        first_paper = result[0]
+        assert hasattr(first_paper, "title")
+        assert hasattr(first_paper, "authors")
+        assert hasattr(first_paper, "session")
+        assert hasattr(first_paper, "year")
+        assert hasattr(first_paper, "conference")
 
 
 # ============================================================================
@@ -585,47 +526,54 @@ class TestML4PSRegression:
 
     @pytest.mark.slow
     @patch.object(ML4PSDownloaderPlugin, "_scrape_papers")
-    def test_output_schema_matches_old_format(self, mock_scrape, ml4ps_plugin, sample_scraped_papers):
-        """Test that output schema matches the original full schema format."""
+    def test_output_schema_matches_lightweight_format(self, mock_scrape, ml4ps_plugin, sample_scraped_papers):
+        """Test that output schema matches the lightweight format."""
         mock_scrape.return_value = sample_scraped_papers
 
         result = ml4ps_plugin.download(year=2025)
 
-        # Check top-level structure
-        assert "count" in result
-        assert "next" in result
-        assert "previous" in result
-        assert "results" in result
+        # Result should be a list of LightweightPaper objects
+        assert isinstance(result, list)
+        assert len(result) > 0
 
-        # Check paper structure
-        paper = result["results"][0]
-        required_fields = [
-            "id",
-            "uid",
-            "name",
-            "authors",
-            "abstract",
-            "session",
-            "event_type",
-            "eventmedia",
-            "keywords",
-            "sourceurl",
-        ]
-        for field in required_fields:
-            assert field in paper, f"Missing required field: {field}"
+        # Check first paper has required lightweight schema fields
+        first_paper = result[0]
+
+        # Required fields in LightweightPaper model
+        assert hasattr(first_paper, "title")
+        assert hasattr(first_paper, "authors")
+        assert hasattr(first_paper, "abstract")
+        assert hasattr(first_paper, "session")
+        assert hasattr(first_paper, "poster_position")
+        assert hasattr(first_paper, "year")
+        assert hasattr(first_paper, "conference")
+
+        # Verify data types
+        assert isinstance(first_paper.title, str)
+        assert isinstance(first_paper.authors, list)
+        assert isinstance(first_paper.abstract, str)
+        assert isinstance(first_paper.session, str)
+        assert isinstance(first_paper.poster_position, str)
+        assert isinstance(first_paper.year, int)
+        assert isinstance(first_paper.conference, str)
+
+        # Optional fields
+        assert hasattr(first_paper, "paper_pdf_url")
+        assert hasattr(first_paper, "poster_image_url")
+        assert hasattr(first_paper, "url")
+        assert hasattr(first_paper, "keywords")
 
     def test_author_format_compatibility(self, ml4ps_plugin, sample_scraped_papers):
-        """Test that authors are formatted correctly."""
+        """Test that authors are formatted correctly in lightweight schema."""
         lightweight = ml4ps_plugin._convert_to_lightweight_format(sample_scraped_papers)
 
-        result = convert_lightweight_to_neurips_schema(
-            lightweight,
-            session_default="Workshop",
-            event_type="Poster",
-        )
+        # Lightweight schema now uses simple list of author names
+        assert isinstance(lightweight, list)
+        assert len(lightweight) > 0
 
-        authors = result["results"][0]["authors"]
-        assert isinstance(authors, list)
-        assert len(authors) > 0
-        assert "fullname" in authors[0]
-        assert "id" in authors[0]
+        paper = lightweight[0]
+        assert "authors" in paper
+        assert isinstance(paper["authors"], list)
+        assert len(paper["authors"]) > 0
+        # Authors are now simple strings, not dicts
+        assert isinstance(paper["authors"][0], str)
