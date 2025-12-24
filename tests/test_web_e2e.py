@@ -200,7 +200,7 @@ def web_server(test_database, tmp_path_factory):
         paper_uid = paper[0]
         abstract = paper[1]
         if abstract:  # Only add if abstract exists
-            em.add_paper(paper_id=paper_uid, abstract=abstract, metadata={"paper_id": str(paper_uid)})
+            em.add_paper(paper_uid=paper_uid, abstract=abstract)
 
     db.close()
     # Don't close embeddings manager - keep the ChromaDB collection active

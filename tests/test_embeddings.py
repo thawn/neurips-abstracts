@@ -172,9 +172,8 @@ class TestEmbeddingsManager:
         embeddings_manager.create_collection()
 
         embeddings_manager.add_paper(
-            paper_id=1,
+            paper_uid="1",
             abstract="Test abstract",
-            metadata={"title": "Test Paper", "authors": "John Doe"},
         )
 
         stats = embeddings_manager.get_collection_stats()
@@ -188,9 +187,8 @@ class TestEmbeddingsManager:
 
         embedding = [0.1] * 4096
         embeddings_manager.add_paper(
-            paper_id=1,
+            paper_uid="1",
             abstract="Test abstract",
-            metadata={"title": "Test Paper"},
             embedding=embedding,
         )
 
@@ -204,7 +202,7 @@ class TestEmbeddingsManager:
         embeddings_manager.create_collection()
 
         # Should log warning but not raise error
-        embeddings_manager.add_paper(paper_id=1, abstract="")
+        embeddings_manager.add_paper(paper_uid="1", abstract="")
 
         stats = embeddings_manager.get_collection_stats()
         assert stats["count"] == 0
@@ -213,7 +211,7 @@ class TestEmbeddingsManager:
     def test_add_paper_collection_not_initialized(self, embeddings_manager):
         """Test adding paper without collection."""
         with pytest.raises(EmbeddingsError, match="Collection not initialized"):
-            embeddings_manager.add_paper(paper_id=1, abstract="Test")
+            embeddings_manager.add_paper(paper_uid="1", abstract="Test")
 
     def test_add_multiple_papers(self, embeddings_manager, mock_lm_studio):
         """Test adding multiple papers."""
@@ -221,13 +219,13 @@ class TestEmbeddingsManager:
         embeddings_manager.create_collection()
 
         papers = [
-            (1, "Abstract 1", {"title": "Paper 1"}),
-            (2, "Abstract 2", {"title": "Paper 2"}),
-            (3, "Abstract 3", {"title": "Paper 3"}),
+            ("1", "Abstract 1"),
+            ("2", "Abstract 2"),
+            ("3", "Abstract 3"),
         ]
 
-        for paper_id, abstract, metadata in papers:
-            embeddings_manager.add_paper(paper_id, abstract, metadata)
+        for paper_uid, abstract in papers:
+            embeddings_manager.add_paper(paper_uid, abstract)
 
         stats = embeddings_manager.get_collection_stats()
         assert stats["count"] == 3
@@ -239,13 +237,13 @@ class TestEmbeddingsManager:
         embeddings_manager.create_collection()
 
         papers = [
-            (1, "Abstract 1", {"title": "Paper 1"}),
-            (2, "", {"title": "Paper 2"}),  # Empty abstract
-            (3, "Abstract 3", {"title": "Paper 3"}),
+            ("1", "Abstract 1"),
+            ("2", ""),  # Empty abstract
+            ("3", "Abstract 3"),
         ]
 
-        for paper_id, abstract, metadata in papers:
-            embeddings_manager.add_paper(paper_id, abstract, metadata)
+        for paper_uid, abstract in papers:
+            embeddings_manager.add_paper(paper_uid, abstract)
 
         stats = embeddings_manager.get_collection_stats()
         assert stats["count"] == 2  # Only 2 papers should be added
@@ -258,11 +256,11 @@ class TestEmbeddingsManager:
 
         # Add some papers
         papers = [
-            (1, "Deep learning neural networks", {"title": "DL Paper"}),
-            (2, "Natural language processing", {"title": "NLP Paper"}),
+            ("1", "Deep learning neural networks"),
+            ("2", "Natural language processing"),
         ]
-        for paper_id, abstract, metadata in papers:
-            embeddings_manager.add_paper(paper_id, abstract, metadata)
+        for paper_uid, abstract in papers:
+            embeddings_manager.add_paper(paper_uid, abstract)
 
         # Search
         results = embeddings_manager.search_similar("machine learning", n_results=2)
@@ -270,7 +268,7 @@ class TestEmbeddingsManager:
         assert "ids" in results
         assert "distances" in results
         assert "documents" in results
-        assert "metadatas" in results
+        # metadatas should no longer be included
         assert len(results["ids"][0]) <= 2
         embeddings_manager.close()
 
@@ -301,7 +299,7 @@ class TestEmbeddingsManager:
         assert stats["count"] == 0
 
         # Add a paper
-        embeddings_manager.add_paper(1, "Test abstract", {"title": "Test"})
+        embeddings_manager.add_paper("uid1", "Test abstract")
 
         stats = embeddings_manager.get_collection_stats()
         assert stats["count"] == 1
@@ -464,39 +462,6 @@ class TestEmbeddingsManager:
 
         embeddings_manager.close()
 
-    def test_embed_from_database_with_metadata_fields(self, embeddings_manager, test_database, mock_lm_studio):
-        """Test that metadata fields from lightweight schema are included."""
-        embeddings_manager.connect()
-        embeddings_manager.create_collection()
-
-        count = embeddings_manager.embed_from_database(test_database)
-        assert count == 3
-
-        # Search to verify metadata includes lightweight schema fields
-        results = embeddings_manager.search_similar("test", n_results=3)
-        assert len(results["metadatas"][0]) > 0
-
-        # Check papers have the lightweight schema metadata fields
-        for metadata in results["metadatas"][0]:
-            assert "title" in metadata
-            assert "authors" in metadata
-            assert "keywords" in metadata
-            assert "session" in metadata
-
-        # Find paper1's metadata
-        paper_1_metadata = None
-        for i, paper_id in enumerate(results["ids"][0]):
-            if paper_id == "paper1":
-                paper_1_metadata = results["metadatas"][0][i]
-                break
-
-        assert paper_1_metadata is not None
-        assert paper_1_metadata["title"] == "Deep Learning Paper"
-        assert paper_1_metadata["authors"] == "John Doe, Jane Smith"
-        assert paper_1_metadata["session"] == "ML Session 1"
-
-        embeddings_manager.close()
-
     def test_paper_exists(self, embeddings_manager, mock_lm_studio):
         """Test paper_exists method."""
         embeddings_manager.connect()
@@ -506,9 +471,7 @@ class TestEmbeddingsManager:
         assert not embeddings_manager.paper_exists("test_paper_1")
 
         # Add a paper
-        embeddings_manager.add_paper(
-            paper_id="test_paper_1", abstract="This is a test abstract", metadata={"title": "Test Paper"}
-        )
+        embeddings_manager.add_paper(paper_uid="test_paper_1", abstract="This is a test abstract")
 
         # Now paper should exist
         assert embeddings_manager.paper_exists("test_paper_1")

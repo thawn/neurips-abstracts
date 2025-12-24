@@ -287,31 +287,6 @@ def mock_embeddings_manager():
     mock_em.search_similar.return_value = {
         "ids": [["1", "2", "3"]],  # Use string UIDs (lightweight schema)
         "distances": [[0.1, 0.2, 0.3]],
-        "metadatas": [
-            [
-                {
-                    "title": "Attention Is All You Need",
-                    "authors": "Vaswani et al.",
-                    "topic": "Deep Learning",
-                    "decision": "Accept (oral)",
-                    "keywords": "transformers, attention",
-                },
-                {
-                    "title": "BERT: Pre-training of Deep Bidirectional Transformers",
-                    "authors": "Devlin et al.",
-                    "topic": "Natural Language Processing",
-                    "decision": "Accept (poster)",
-                    "keywords": "language models, pretraining",
-                },
-                {
-                    "title": "GPT-3: Language Models are Few-Shot Learners",
-                    "authors": "Brown et al.",
-                    "topic": "Language Models",
-                    "decision": "Accept (oral)",
-                    "keywords": "large language models, in-context learning",
-                },
-            ]
-        ],
         "documents": [
             [
                 "We propose the Transformer, a model architecture...",

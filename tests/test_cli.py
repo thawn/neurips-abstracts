@@ -509,22 +509,6 @@ class TestCLI:
             mock_em.search_similar.return_value = {
                 "ids": [["123", "456"]],
                 "distances": [[0.1, 0.2]],
-                "metadatas": [
-                    [
-                        {
-                            "title": "Paper 1",
-                            "authors": "Author 1",
-                            "decision": "Accept",
-                            "topic": "ML",
-                        },
-                        {
-                            "title": "Paper 2",
-                            "authors": "Author 2",
-                            "decision": "Accept",
-                            "topic": "DL",
-                        },
-                    ]
-                ],
                 "documents": [["Abstract 1", "Abstract 2"]],
             }
             mock_em.__enter__ = Mock(return_value=mock_em)
@@ -549,8 +533,8 @@ class TestCLI:
         assert exit_code == 0
         captured = capsys.readouterr()
         assert "Found 2 similar paper(s)" in captured.out
-        assert "Paper 1" in captured.out
-        assert "Paper 2" in captured.out
+        assert "Paper UID: 123" in captured.out
+        assert "Paper UID: 456" in captured.out
 
     def test_search_with_abstract(self, tmp_path, capsys):
         """Test search command with --show-abstract flag."""
@@ -588,7 +572,8 @@ class TestCLI:
 
         assert exit_code == 0
         captured = capsys.readouterr()
-        assert "Test Paper" in captured.out
+        # Without database, just shows UID and abstract
+        assert "Paper UID: 789" in captured.out
         assert "Abstract: This is a test abstract" in captured.out
 
     def test_search_with_filter(self, tmp_path, capsys):
@@ -604,15 +589,6 @@ class TestCLI:
             mock_em.search_similar.return_value = {
                 "ids": [["111"]],
                 "distances": [[0.05]],
-                "metadatas": [
-                    [
-                        {
-                            "title": "Filtered Paper",
-                            "authors": "Author",
-                            "decision": "Accept (poster)",
-                        }
-                    ]
-                ],
                 "documents": [["Abstract"]],
             }
             mock_em.__enter__ = Mock(return_value=mock_em)
@@ -637,7 +613,7 @@ class TestCLI:
         assert exit_code == 0
         captured = capsys.readouterr()
         assert "Filter: {'decision': 'Accept (poster)'}" in captured.out
-        assert "Filtered Paper" in captured.out
+        assert "Paper UID: 111" in captured.out
 
     def test_search_no_results(self, tmp_path, capsys):
         """Test search command with no results."""
@@ -649,7 +625,7 @@ class TestCLI:
             mock_em = Mock()
             mock_em.test_lm_studio_connection.return_value = True
             mock_em.get_collection_stats.return_value = {"name": "test", "count": 100}
-            mock_em.search_similar.return_value = {"ids": [[]], "distances": [[]], "metadatas": [[]]}
+            mock_em.search_similar.return_value = {"ids": [[]], "distances": [[]], "documents": [[]]}
             mock_em.__enter__ = Mock(return_value=mock_em)
             mock_em.__exit__ = Mock(return_value=False)
             MockEM.return_value = mock_em
@@ -693,30 +669,22 @@ class TestCLI:
             ]
             db.add_papers(papers)
 
+            # Get the actual UID that was generated
+            cursor = db.connection.cursor()
+            cursor.execute("SELECT uid FROM papers LIMIT 1")
+            test_uid = cursor.fetchone()[0]
+
         embeddings_path = tmp_path / "embeddings"
         embeddings_path.mkdir()
 
-        # Mock embeddings manager
+        # Mock embeddings manager - use the actual UID from database
         with patch("neurips_abstracts.cli.EmbeddingsManager") as MockEM:
             mock_em = Mock()
             mock_em.test_lm_studio_connection.return_value = True
             mock_em.get_collection_stats.return_value = {"name": "test", "count": 1}
             mock_em.search_similar.return_value = {
-                "ids": [["1"]],
+                "ids": [[test_uid]],  # Use the actual UID
                 "distances": [[0.1]],
-                "metadatas": [
-                    [
-                        {
-                            "title": "Test Paper",
-                            "authors": "John Doe; Jane Smith",
-                            "session": "Session 1",
-                            "year": 2025,
-                            "conference": "NeurIPS",
-                            "paper_url": "https://example.com/paper/1",
-                            "poster_position": "A12",
-                        }
-                    ]
-                ],
                 "documents": [["Test abstract"]],
             }
             mock_em.__enter__ = Mock(return_value=mock_em)
@@ -783,7 +751,8 @@ class TestCLI:
         # Should succeed but fall back to author IDs (no author name resolution)
         assert exit_code == 0
         captured = capsys.readouterr()
-        assert "101,102" in captured.out  # Shows IDs as fallback
+        # Should show UID even without database
+        assert "Paper UID: 1" in captured.out
 
     def test_search_with_db_path_lookup_error(self, tmp_path, capsys):
         """Test search command when database connection fails."""
@@ -803,7 +772,6 @@ class TestCLI:
             mock_em.search_similar.return_value = {
                 "ids": [["1"]],
                 "distances": [[0.1]],
-                "metadatas": [[{"title": "Test", "authors": "101", "decision": "Accept"}]],
             }
             mock_em.__enter__ = Mock(return_value=mock_em)
             mock_em.__exit__ = Mock(return_value=False)
@@ -833,8 +801,9 @@ class TestCLI:
         # Should succeed with warning
         assert exit_code == 0
         captured = capsys.readouterr()
-        assert "Could not open database for author names" in captured.err
-        assert "101" in captured.out  # Falls back to IDs
+        assert "Could not fetch paper details from database" in captured.err
+        # Fallback to showing just UID and similarity
+        assert "Paper UID: 1" in captured.out
 
     def test_search_unexpected_exception(self, tmp_path, capsys):
         """Test search command with unexpected exception."""

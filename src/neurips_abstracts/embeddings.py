@@ -265,13 +265,13 @@ class EmbeddingsManager:
         except Exception as e:
             raise EmbeddingsError(f"Failed to create collection: {str(e)}") from e
 
-    def paper_exists(self, paper_id: Union[int, str]) -> bool:
+    def paper_exists(self, paper_uid: str) -> bool:
         """
         Check if a paper already exists in the collection.
 
         Parameters
         ----------
-        paper_id : int or str
+        paper_uid : str
             Unique identifier for the paper.
 
         Returns
@@ -289,29 +289,28 @@ class EmbeddingsManager:
         >>> em = EmbeddingsManager()
         >>> em.connect()
         >>> em.create_collection()
-        >>> em.paper_exists(1)
+        >>> em.paper_exists("abc123")
         False
-        >>> em.add_paper(1, "Abstract text")
-        >>> em.paper_exists(1)
+        >>> em.add_paper("abc123", "Abstract text")
+        >>> em.paper_exists("abc123")
         True
         """
         if not self.collection:
             raise EmbeddingsError("Collection not initialized. Call create_collection() first.")
 
         try:
-            # Try to get the paper by ID
-            result = self.collection.get(ids=[str(paper_id)])
+            # Try to get the paper by UID
+            result = self.collection.get(ids=[paper_uid])
             # If the result has any IDs, the paper exists
             return len(result["ids"]) > 0
         except Exception as e:
-            logger.warning(f"Error checking if paper {paper_id} exists: {str(e)}")
+            logger.warning(f"Error checking if paper {paper_uid} exists: {str(e)}")
             return False
 
     def add_paper(
         self,
-        paper_id: Union[int, str],
+        paper_uid: str,
         abstract: str,
-        metadata: Optional[Dict[str, Any]] = None,
         embedding: Optional[List[float]] = None,
     ) -> None:
         """
@@ -319,12 +318,10 @@ class EmbeddingsManager:
 
         Parameters
         ----------
-        paper_id : int or str
+        paper_uid : str
             Unique identifier for the paper.
         abstract : str
             Paper abstract text.
-        metadata : dict, optional
-            Additional metadata to store with the embedding.
         embedding : List[float], optional
             Pre-computed embedding. If None, will generate from abstract.
 
@@ -339,16 +336,15 @@ class EmbeddingsManager:
         >>> em.connect()
         >>> em.create_collection()
         >>> em.add_paper(
-        ...     paper_id=1,
-        ...     abstract="This paper presents...",
-        ...     metadata={"title": "Example Paper", "year": 2025}
+        ...     paper_uid="abc123",
+        ...     abstract="This paper presents..."
         ... )
         """
         if not self.collection:
             raise EmbeddingsError("Collection not initialized. Call create_collection() first.")
 
         if not abstract or not abstract.strip():
-            logger.warning(f"Skipping paper {paper_id}: empty abstract")
+            logger.warning(f"Skipping paper {paper_uid}: empty abstract")
             return
 
         try:
@@ -356,21 +352,16 @@ class EmbeddingsManager:
             if embedding is None:
                 embedding = self.generate_embedding(abstract)
 
-            # Prepare metadata - convert all values to strings for ChromaDB compatibility
-            meta = metadata or {}
-            meta = {k: str(v) if v is not None else "" for k, v in meta.items()}
-
-            # Add to collection
+            # Add to collection - no metadata, just document and embedding
             self.collection.add(
                 embeddings=[embedding],
                 documents=[abstract],
-                metadatas=[meta],
-                ids=[str(paper_id)],
+                ids=[paper_uid],
             )
-            logger.debug(f"Added paper {paper_id} to collection")
+            logger.debug(f"Added paper {paper_uid} to collection")
 
         except Exception as e:
-            raise EmbeddingsError(f"Failed to add paper {paper_id}: {str(e)}") from e
+            raise EmbeddingsError(f"Failed to add paper {paper_uid}: {str(e)}") from e
 
     def search_similar(
         self,
@@ -388,12 +379,12 @@ class EmbeddingsManager:
         n_results : int, optional
             Number of results to return, by default 10
         where : dict, optional
-            Metadata filter conditions.
+            Metadata filter conditions (not used as metadata is no longer stored).
 
         Returns
         -------
         dict
-            Search results containing ids, distances, documents, and metadatas.
+            Search results containing ids, distances, and documents.
 
         Raises
         ------
@@ -406,8 +397,8 @@ class EmbeddingsManager:
         >>> em.connect()
         >>> em.create_collection()
         >>> results = em.search_similar("deep learning transformers", n_results=5)
-        >>> for i, paper_id in enumerate(results['ids'][0]):
-        ...     print(f"{i+1}. Paper {paper_id}: {results['metadatas'][0][i]}")
+        >>> for i, paper_uid in enumerate(results['ids'][0]):
+        ...     print(f"{i+1}. Paper UID: {paper_uid}")
         """
         if not self.collection:
             raise EmbeddingsError("Collection not initialized. Call create_collection() first.")
@@ -419,11 +410,15 @@ class EmbeddingsManager:
             # Generate embedding for query
             query_embedding = self.generate_embedding(query)
 
-            # Search in collection
+            # Search in collection - note: where filter won't work without metadata
+            if where:
+                logger.warning(
+                    "Metadata filters (where parameter) are no longer supported as metadata is not stored in ChromaDB"
+                )
+
             results = self.collection.query(
                 query_embeddings=[query_embedding],
                 n_results=n_results,
-                where=where,
             )
 
             logger.info(f"Found {len(results['ids'][0])} similar papers")
@@ -544,31 +539,24 @@ class EmbeddingsManager:
             embedded_count = 0
             skipped_count = 0
             for i, row in enumerate(rows):
-                paper_id = row["uid"]
+                paper_uid = row["uid"]
                 abstract = f"{row['title']}\n\n{row['abstract']}"
 
                 if not abstract or not abstract.strip():
-                    logger.warning(f"Skipping paper {paper_id}: no abstract and no title")
+                    logger.warning(f"Skipping paper {paper_uid}: no abstract and no title")
                     continue
 
                 # Check if paper already exists in the collection
-                if self.paper_exists(paper_id):
-                    logger.debug(f"Skipping paper {paper_id}: already exists in collection")
+                if self.paper_exists(paper_uid):
+                    logger.debug(f"Skipping paper {paper_uid}: already exists in collection")
                     skipped_count += 1
                     # Still call progress callback to update the progress bar
                     if progress_callback:
                         progress_callback(i + 1, total)
                     continue
 
-                metadata = {
-                    "title": row["title"] or "",
-                    "authors": row["authors"] or "",
-                    "keywords": row["keywords"] or "",
-                    "session": row["session"] or "",
-                }
-
                 try:
-                    self.add_paper(paper_id, abstract, metadata)
+                    self.add_paper(paper_uid, abstract)
                     embedded_count += 1
 
                     # Call progress callback if provided
@@ -576,7 +564,7 @@ class EmbeddingsManager:
                         progress_callback(i + 1, total)
 
                 except Exception as e:
-                    logger.error(f"Failed to embed paper {paper_id}: {str(e)}")
+                    logger.error(f"Failed to embed paper {paper_uid}: {str(e)}")
                     continue
 
             conn.close()

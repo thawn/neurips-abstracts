@@ -89,7 +89,7 @@ def format_search_results(
     Parameters
     ----------
     search_results : dict
-        Search results from ChromaDB with 'ids', 'distances', 'metadatas', 'documents'.
+        Search results from ChromaDB with 'ids', 'distances', 'documents'.
     database : DatabaseManager
         Database instance for fetching complete paper details.
     include_documents : bool, optional

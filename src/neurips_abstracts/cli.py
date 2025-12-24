@@ -270,57 +270,80 @@ def search_command(args: argparse.Namespace) -> int:
         num_results = len(results["ids"][0])
         print(f"✅ Found {num_results} similar paper(s):\n")
 
-        # Try to open database to get author names
+        # Open database to get complete paper details
         db_manager = None
+        papers = []
+
         if args.db_path:
             db_path = Path(args.db_path)
             if db_path.exists():
                 try:
+                    from neurips_abstracts.paper_utils import format_search_results
+
                     db_manager = DatabaseManager(db_path)
                     db_manager.connect()
+
+                    # Format search results using the utility function
+                    papers = format_search_results(results, db_manager, include_documents=args.show_abstract)
                 except Exception as e:
-                    print(f"⚠️  Could not open database for author names: {e}", file=sys.stderr)
+                    print(f"⚠️  Could not fetch paper details from database: {e}", file=sys.stderr)
+                    # Fall back to showing just IDs and distances
+                    papers = []
 
-        for i in range(num_results):
-            paper_id = results["ids"][0][i]
-            metadata = results["metadatas"][0][i]
-            distance = results["distances"][0][i]
-            similarity = 1 - distance if distance <= 1 else 0
-            document = results["documents"][0][i] if "documents" in results else ""
+        # Display papers
+        if papers:
+            # We have complete paper data from database
+            for i, paper in enumerate(papers, 1):
+                print(f"{i}. Paper UID: {paper['uid']}")
+                print(f"   Title: {paper.get('title', 'N/A')}")
 
-            print(f"{i + 1}. Paper ID: {paper_id}")
-            print(f"   Title: {metadata.get('title', 'N/A')}")
+                # Format authors
+                authors = paper.get("authors", [])
+                if isinstance(authors, list) and authors:
+                    authors_display = "; ".join(authors)
+                else:
+                    authors_display = str(authors) if authors else "N/A"
+                print(f"   Authors: {authors_display}")
 
-            # Get author names from database if available
-            authors_display = metadata.get("authors", "N/A")
-            if db_manager:
-                try:
-                    authors = db_manager.get_paper_authors(int(paper_id))
-                    if authors:
-                        author_names = [author["fullname"] for author in authors]
-                        authors_display = ", ".join(author_names)
-                except Exception:
-                    pass  # Fall back to author IDs
+                if paper.get("decision"):
+                    print(f"   Decision: {paper['decision']}")
 
-            print(f"   Authors: {authors_display}")
-            print(f"   Decision: {metadata.get('decision', 'N/A')}")
+                if paper.get("topic"):
+                    print(f"   Topic: {paper['topic']}")
 
-            if metadata.get("topic"):
-                print(f"   Topic: {metadata.get('topic')}")
+                if paper.get("url") or paper.get("paper_url"):
+                    url = paper.get("url") or paper.get("paper_url")
+                    print(f"   URL: {url}")
 
-            if metadata.get("paper_url"):
-                print(f"   URL: {metadata.get('paper_url')}")
+                if paper.get("poster_position"):
+                    print(f"   Poster Position: {paper['poster_position']}")
 
-            if metadata.get("poster_position"):
-                print(f"   Poster Position: {metadata.get('poster_position')}")
+                # Show similarity score
+                if "similarity" in paper:
+                    print(f"   Similarity: {paper['similarity']:.4f}")
 
-            print(f"   Similarity: {similarity:.4f}")
+                if args.show_abstract and paper.get("abstract"):
+                    abstract = paper["abstract"]
+                    abstract = abstract[:300] + "..." if len(abstract) > 300 else abstract
+                    print(f"   Abstract: {abstract}")
 
-            if args.show_abstract and document:
-                abstract = document[:300] + "..." if len(document) > 300 else document
-                print(f"   Abstract: {abstract}")
+                print()
+        else:
+            # Fall back to showing just ChromaDB results (IDs and distances)
+            for i in range(num_results):
+                paper_uid = results["ids"][0][i]
+                distance = results["distances"][0][i]
+                similarity = 1 - distance if distance <= 1 else 0
+                document = results["documents"][0][i] if "documents" in results else ""
 
-            print()
+                print(f"{i + 1}. Paper UID: {paper_uid}")
+                print(f"   Similarity: {similarity:.4f}")
+
+                if args.show_abstract and document:
+                    abstract = document[:300] + "..." if len(document) > 300 else document
+                    print(f"   Abstract: {abstract}")
+
+                print()
 
         if db_manager:
             db_manager.close()

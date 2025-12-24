@@ -95,7 +95,6 @@ class TestFormatSearchResults:
             "ids": [["abc123", "def456"]],
             "distances": [[0.2, 0.5]],
             "documents": [["Abstract 1", "Abstract 2"]],
-            "metadatas": [[{}, {}]],
         }
 
         mock_db = Mock()

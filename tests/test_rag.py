@@ -75,7 +75,6 @@ def mock_embeddings_manager_empty():
     mock_em.search_similar.return_value = {
         "ids": [[]],
         "distances": [[]],
-        "metadatas": [[]],
         "documents": [[]],
     }
     return mock_em
@@ -422,14 +421,8 @@ class TestRAGChatIntegration:
 
         # Add a test paper (use string uid to match lightweight schema)
         em.add_paper(
-            paper_id="1",
+            paper_uid="1",
             abstract="This paper discusses attention mechanisms in neural networks.",
-            metadata={
-                "title": "Attention Mechanisms",
-                "authors": "Test Author",
-                "session": "Test Session",
-                "keywords": "attention, neural networks",
-            },
         )
 
         # Create database with test data
@@ -496,14 +489,8 @@ class TestRAGChatIntegration:
 
         # Add test papers (use string uid to match lightweight schema)
         em.add_paper(
-            paper_id="1",
+            paper_uid="1",
             abstract="Transformers are a deep learning architecture based on attention.",
-            metadata={
-                "title": "Transformers",
-                "authors": "Vaswani et al.",
-                "session": "Test Session",
-                "keywords": "transformers, attention",
-            },
         )
 
         # Create database with test data
@@ -571,14 +558,8 @@ class TestRAGChatIntegration:
 
         # Add test paper (use string uid to match lightweight schema)
         em.add_paper(
-            paper_id="1",
+            paper_uid="1",
             abstract="Test abstract about machine learning.",
-            metadata={
-                "title": "ML Paper",
-                "authors": "Author",
-                "session": "Test Session",
-                "keywords": "machine learning",
-            },
         )
 
         # Create database with test data
