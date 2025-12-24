@@ -71,8 +71,7 @@ class EmbeddingsManager:
     >>> em = EmbeddingsManager()
     >>> em.connect()
     >>> em.create_collection()
-    >>> embedding = em.generate_embedding("This is a paper abstract.")
-    >>> em.add_paper(paper_id=1, abstract="...", metadata={...})
+    >>> em.add_paper(paper_dict)
     >>> results = em.search_similar("machine learning", n_results=5)
     >>> em.close()
     """
@@ -290,10 +289,10 @@ class EmbeddingsManager:
         >>> em = EmbeddingsManager()
         >>> em.connect()
         >>> em.create_collection()
-        >>> em.paper_exists(1)
+        >>> em.paper_exists("uid1")
         False
-        >>> em.add_paper(1, "Abstract text")
-        >>> em.paper_exists(1)
+        >>> em.add_paper(paper_dict)
+        >>> em.paper_exists("uid1")
         True
         """
         if not self.collection:
@@ -399,11 +398,7 @@ class EmbeddingsManager:
         >>> em = EmbeddingsManager()
         >>> em.connect()
         >>> em.create_collection()
-        >>> em.add_paper(
-        ...     paper_id=1,
-        ...     abstract="This paper presents...",
-        ...     metadata={"title": "Example Paper", "year": 2025}
-        ... )
+        >>> em.add_paper(paper_dict)
         """
         if not self.collection:
             raise EmbeddingsError("Collection not initialized. Call create_collection() first.")
