@@ -1,5 +1,11 @@
 # NeurIPS Abstracts
 
+## Deprecation Notice
+
+This repository is not maintained any longer. Please use [Abstracts explorer](https://github.com/thawn/abstracts-explorer) from now on. Abstracts explorer is generalizing this tool to explore abstracts from various sources, not just NeurIPS (but it still supports all features of this tool).
+
+----------
+
 A Python package for downloading NeurIPS conference data and loading it into a SQLite database.
 
 ## Features
